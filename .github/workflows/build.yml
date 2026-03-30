@@ -60,7 +60,9 @@ jobs:
               echo "QNN SDK extraction failed: libQnnHtp.so not found"
               exit 1
             fi
-            qnn_root="$(dirname "$(dirname "$(dirname "${qnn_lib_path}")")")"
+            qnn_arch_dir="$(dirname "${qnn_lib_path}")"
+            qnn_lib_dir="$(dirname "${qnn_arch_dir}")"
+            qnn_root="$(dirname "${qnn_lib_dir}")"
             echo "QNN_SDK_ROOT=${qnn_root}" >> "$GITHUB_ENV"
             echo "Resolved QNN_SDK_ROOT=${qnn_root}"
           fi
