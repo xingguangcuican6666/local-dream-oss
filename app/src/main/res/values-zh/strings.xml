@@ -280,4 +280,6 @@
     <string name="select_model_id">选择或输入模型 ID</string>
     <string name="api_model_added">API 模型添加成功</string>
     <string name="prompt_empty_hint">请输入提示词</string>
+    <string name="installed_local_models">已安装的本地模型</string>
+    <string name="quick_setup">一键配置</string>
 </resources>

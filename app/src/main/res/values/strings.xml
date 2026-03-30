@@ -280,4 +280,6 @@
     <string name="select_model_id">Select or enter model ID</string>
     <string name="api_model_added">API model added successfully</string>
     <string name="prompt_empty_hint">Please enter a prompt</string>
+    <string name="installed_local_models">Installed Local Models</string>
+    <string name="quick_setup">Quick Setup</string>
 </resources>

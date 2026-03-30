@@ -148,6 +148,9 @@ fun ModelListScreen(
     var showCustomModelDialog by remember { mutableStateOf(false) }
     var showCustomNpuModelDialog by remember { mutableStateOf(false) }
     var showAddApiModelDialog by remember { mutableStateOf(false) }
+    var apiModelPrefillName by remember { mutableStateOf("") }
+    var apiModelPrefillModelId by remember { mutableStateOf("") }
+    var apiModelPrefillSize by remember { mutableStateOf("1024x1024") }
     var showDeleteApiModelConfirm by remember { mutableStateOf<io.github.xororz.localdream.data.OpenAIModel?>(null) }
     var isConverting by remember { mutableStateOf(false) }
     var conversionProgress by remember { mutableStateOf("") }
@@ -232,6 +235,9 @@ fun ModelListScreen(
     }
     val npuModels = remember(modelRepository.models) {
         modelRepository.models.filter { !it.runOnCpu }
+    }
+    val downloadedModels = remember(modelRepository.models) {
+        modelRepository.models.filter { it.isDownloaded }
     }
 
     val lastViewedPage = remember {
@@ -592,13 +598,24 @@ fun ModelListScreen(
     if (showAddApiModelDialog) {
         AddApiModelDialog(
             repository = openAIRepository,
-            onDismiss = { showAddApiModelDialog = false },
+            onDismiss = {
+                showAddApiModelDialog = false
+                apiModelPrefillName = ""
+                apiModelPrefillModelId = ""
+                apiModelPrefillSize = "1024x1024"
+            },
             onAdded = {
                 showAddApiModelDialog = false
+                apiModelPrefillName = ""
+                apiModelPrefillModelId = ""
+                apiModelPrefillSize = "1024x1024"
                 scope.launch {
                     snackbarHostState.showSnackbar(context.getString(R.string.api_model_added))
                 }
-            }
+            },
+            initialName = apiModelPrefillName,
+            initialModelId = apiModelPrefillModelId,
+            initialSize = apiModelPrefillSize
         )
     }
 
@@ -714,6 +731,32 @@ fun ModelListScreen(
                                     modifier = Modifier.padding(end = 8.dp)
                                 )
                                 Text(stringResource(R.string.add_api_model))
+                            }
+                        }
+                        if (downloadedModels.isNotEmpty()) {
+                            item {
+                                Text(
+                                    text = stringResource(R.string.installed_local_models),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                                    modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
+                                )
+                            }
+                            items(downloadedModels, key = { it.id }) { model ->
+                                InstalledModelQuickSetupRow(
+                                    model = model,
+                                    onQuickSetup = {
+                                        apiModelPrefillName = model.name
+                                        apiModelPrefillModelId = model.id
+                                        val sz = model.generationSize
+                                        apiModelPrefillSize = "${sz}x${sz}"
+                                        showAddApiModelDialog = true
+                                    }
+                                )
+                            }
+                            item {
+                                HorizontalDivider(modifier = Modifier.padding(top = 4.dp))
                             }
                         }
                         items(apiModels, key = { it.id }) { apiModel ->
@@ -3031,6 +3074,51 @@ private fun getFileNameFromUri(context: Context, uri: Uri): String? {
 }
 
 @Composable
+private fun InstalledModelQuickSetupRow(
+    model: Model,
+    onQuickSetup: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = model.name,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = "${model.generationSize}×${model.generationSize}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+            )
+        }
+        FilledTonalButton(
+            onClick = onQuickSetup,
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+        ) {
+            Icon(
+                Icons.Default.Add,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                stringResource(R.string.quick_setup),
+                style = MaterialTheme.typography.labelMedium
+            )
+        }
+    }
+}
+
+@Composable
 private fun OpenAIModelCard(
     model: io.github.xororz.localdream.data.OpenAIModel,
     onClick: () -> Unit,
@@ -3125,17 +3213,20 @@ private fun OpenAIModelCard(
 private fun AddApiModelDialog(
     repository: io.github.xororz.localdream.data.OpenAIModelRepository,
     onDismiss: () -> Unit,
-    onAdded: () -> Unit
+    onAdded: () -> Unit,
+    initialName: String = "",
+    initialModelId: String = "",
+    initialSize: String = "1024x1024"
 ) {
-    var name by remember { mutableStateOf("") }
-    var modelId by remember { mutableStateOf("") }
+    val commonSizes = listOf("256x256", "512x512", "768x768", "1024x1024", "1024x1792", "1792x1024")
+    var name by remember(initialName) { mutableStateOf(initialName) }
+    var modelId by remember(initialModelId) { mutableStateOf(initialModelId) }
     var apiEndpoint by remember { mutableStateOf("") }
     var apiKey by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
-    var selectedSize by remember { mutableStateOf("1024x1024") }
+    var selectedSize by remember(initialSize) { mutableStateOf(if (initialSize in commonSizes) initialSize else "1024x1024") }
     var showError by remember { mutableStateOf(false) }
 
-    val commonSizes = listOf("256x256", "512x512", "768x768", "1024x1024", "1024x1792", "1792x1024")
     var dropdownExpanded by remember { mutableStateOf(false) }
     var modelDropdownExpanded by remember { mutableStateOf(false) }
 

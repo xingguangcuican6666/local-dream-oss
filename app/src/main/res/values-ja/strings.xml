@@ -250,4 +250,6 @@
     <string name="select_model_id">モデルIDを選択または入力</string>
     <string name="api_model_added">APIモデルが正常に追加されました</string>
     <string name="prompt_empty_hint">プロンプトを入力してください</string>
+    <string name="installed_local_models">インストール済みローカルモデル</string>
+    <string name="quick_setup">クイック設定</string>
 </resources>
