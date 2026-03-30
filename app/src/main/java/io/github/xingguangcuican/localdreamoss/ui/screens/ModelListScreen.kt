@@ -1,0 +1,3653 @@
+package io.github.xingguangcuican.localdreamoss.ui.screens
+
+import android.content.Context
+import android.content.Intent
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.runtime.*
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
+import io.github.xingguangcuican.localdreamoss.data.*
+import io.github.xingguangcuican.localdreamoss.navigation.Screen
+import io.github.xingguangcuican.localdreamoss.service.BackendService
+import io.github.xingguangcuican.localdreamoss.service.ModelDownloadService
+import kotlinx.coroutines.launch
+import java.text.DecimalFormat
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.res.stringResource
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.foundation.text.ClickableText
+import androidx.compose.ui.text.style.TextDecoration
+import io.github.xingguangcuican.localdreamoss.R
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.material.icons.automirrored.filled.Help
+import androidx.compose.material3.TabRowDefaults.SecondaryIndicator
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
+import androidx.compose.ui.draw.clip
+import androidx.core.content.edit
+import java.io.File
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.net.Uri
+import android.provider.OpenableColumns
+import android.util.Log
+import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Folder
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.documentfile.provider.DocumentFile
+import java.util.zip.ZipInputStream
+import java.io.BufferedOutputStream
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.core.net.toUri
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
+
+data class LoRAFile(
+    val uri: Uri,
+    val weight: Float = 1.0f
+)
+
+private fun getCleanFileName(uri: Uri): String {
+    val fileName = uri.lastPathSegment ?: "Unknown file"
+    return if (fileName.startsWith("primary:")) {
+        fileName.removePrefix("primary:")
+    } else {
+        fileName
+    }
+}
+
+@Composable
+private fun DeleteConfirmDialog(
+    selectedCount: Int,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.delete_model)) },
+        text = { Text(stringResource(R.string.delete_confirm, selectedCount)) },
+        confirmButton = {
+            TextButton(
+                onClick = onConfirm,
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = MaterialTheme.colorScheme.error
+                )
+            ) {
+                Text(stringResource(R.string.delete))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@Composable
+fun ModelListScreen(
+    navController: NavController,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    var downloadingModel by remember { mutableStateOf<Model?>(null) }
+    var currentProgress by remember { mutableStateOf<DownloadProgress?>(null) }
+    var downloadError by remember { mutableStateOf<String?>(null) }
+    var showDownloadConfirm by remember { mutableStateOf<Model?>(null) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+    var showUpgradeConfirm by remember { mutableStateOf<Model?>(null) }
+
+    var isSelectionMode by remember { mutableStateOf(false) }
+    var selectedModels by remember { mutableStateOf(setOf<Model>()) }
+
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scrollBehavior =
+        TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
+
+    var showSettingsDialog by remember { mutableStateOf(false) }
+    var showFileManagerDialog by remember { mutableStateOf(false) }
+    var showEmbeddingManagerDialog by remember { mutableStateOf(false) }
+    var showCustomModelDialog by remember { mutableStateOf(false) }
+    var showCustomNpuModelDialog by remember { mutableStateOf(false) }
+    var showAddApiModelDialog by remember { mutableStateOf(false) }
+    var apiModelPrefillName by remember { mutableStateOf("") }
+    var apiModelPrefillModelId by remember { mutableStateOf("") }
+    var apiModelPrefillSize by remember { mutableStateOf("1024x1024") }
+    var quickSetupBackendModelId by remember { mutableStateOf<String?>(null) }
+    var quickSetupResolution by remember { mutableIntStateOf(512) }
+    var showDeleteApiModelConfirm by remember { mutableStateOf<io.github.xingguangcuican.localdreamoss.data.OpenAIModel?>(null) }
+    var isConverting by remember { mutableStateOf(false) }
+    var conversionProgress by remember { mutableStateOf("") }
+    var tempBaseUrl by remember { mutableStateOf("") }
+    var selectedSource by remember { mutableStateOf("huggingface") }
+    val generationPreferences = remember { GenerationPreferences(context) }
+    val localApiPrefs = remember { context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE) }
+    val unifiedLocalApiModelId = "local_api_unified"
+    var currentBaseUrl by remember { mutableStateOf("https://huggingface.co/") }
+
+    var version by remember { mutableStateOf(0) }
+    val modelRepository = remember(version) { ModelRepository(context) }
+    val openAIRepository = remember { io.github.xingguangcuican.localdreamoss.data.OpenAIModelRepository(context) }
+
+    var showHelpDialog by remember { mutableStateOf(false) }
+
+    val isFirstLaunch = remember {
+        val preferences = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+        val isFirst = preferences.getBoolean("is_first_launch", true)
+        if (isFirst) {
+            preferences.edit() { putBoolean("is_first_launch", false) }
+        }
+        isFirst
+    }
+
+    val downloadState by ModelDownloadService.downloadState.collectAsState()
+
+    LaunchedEffect(downloadState) {
+        when (val state = downloadState) {
+            is ModelDownloadService.DownloadState.Downloading -> {
+                val model = modelRepository.models.find { it.id == state.modelId }
+                if (model != null) {
+                    downloadingModel = model
+                    currentProgress = DownloadProgress(
+                        progress = state.progress,
+                        downloadedBytes = state.downloadedBytes,
+                        totalBytes = state.totalBytes
+                    )
+                }
+            }
+
+            is ModelDownloadService.DownloadState.Extracting -> {
+                val model = modelRepository.models.find { it.id == state.modelId }
+                if (model != null) {
+                    downloadingModel = model
+                    currentProgress = null
+                }
+            }
+
+            is ModelDownloadService.DownloadState.Success -> {
+                modelRepository.refreshModelState(state.modelId)
+                downloadingModel = null
+                currentProgress = null
+                snackbarHostState.showSnackbar(context.getString(R.string.download_done))
+            }
+
+            is ModelDownloadService.DownloadState.Error -> {
+                downloadingModel = null
+                currentProgress = null
+                downloadError = state.message
+            }
+
+            is ModelDownloadService.DownloadState.Idle -> {
+                if (downloadingModel != null) {
+                    downloadingModel = null
+                    currentProgress = null
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        if (isFirstLaunch) {
+            showHelpDialog = true
+        }
+        scope.launch {
+            currentBaseUrl = generationPreferences.getBaseUrl()
+            selectedSource = generationPreferences.getSelectedSource()
+        }
+    }
+
+    val cpuModels = remember(modelRepository.models) {
+        modelRepository.models.filter { it.runOnCpu }
+    }
+    val npuModels = remember(modelRepository.models) {
+        modelRepository.models.filter { !it.runOnCpu }
+    }
+    val downloadedModels = remember(modelRepository.models) {
+        modelRepository.models.filter { it.isDownloaded }
+    }
+
+    val lastViewedPage = remember {
+        val preferences = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+        preferences.getInt("last_viewed_page", 0)
+    }
+
+    val pagerState = rememberPagerState(
+        initialPage = lastViewedPage,
+        pageCount = { 3 }
+    )
+
+    LaunchedEffect(pagerState.currentPage) {
+        val preferences = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+        preferences.edit() { putInt("last_viewed_page", pagerState.currentPage) }
+    }
+
+    val tabTitles = listOf(
+        stringResource(R.string.cpu_models),
+        stringResource(R.string.npu_models),
+        stringResource(R.string.api_models)
+    )
+
+    BackHandler(enabled = isSelectionMode || showSettingsDialog) {
+        when {
+            showSettingsDialog -> showSettingsDialog = false
+            isSelectionMode -> {
+                isSelectionMode = false
+                selectedModels = emptySet()
+            }
+        }
+    }
+    LaunchedEffect(downloadError) {
+        downloadError?.let {
+            scope.launch {
+                snackbarHostState.showSnackbar(
+                    message = it,
+                    duration = SnackbarDuration.Short
+                )
+                downloadError = null
+            }
+        }
+    }
+    if (showHelpDialog) {
+        AlertDialog(
+//            onDismissRequest = { showHelpDialog = false },
+            onDismissRequest = { },
+            title = {
+                Text(
+                    text = stringResource(R.string.about_app),
+                    style = MaterialTheme.typography.headlineSmall
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp)
+                ) {
+                    val context = LocalContext.current
+                    val mustReadText = stringResource(R.string.must_read)
+                    val githubUrl = "https://github.com/xororz/local-dream"
+
+                    val annotatedString = buildAnnotatedString {
+                        val fullText = mustReadText
+                        append(fullText)
+
+                        val startIndex = fullText.indexOf(githubUrl)
+                        if (startIndex >= 0) {
+                            addStyle(
+                                style = SpanStyle(
+                                    color = MaterialTheme.colorScheme.primary,
+                                    textDecoration = TextDecoration.Underline
+                                ),
+                                start = startIndex,
+                                end = startIndex + githubUrl.length
+                            )
+                            addStringAnnotation(
+                                tag = "URL",
+                                annotation = githubUrl,
+                                start = startIndex,
+                                end = startIndex + githubUrl.length
+                            )
+                        }
+                    }
+
+                    ClickableText(
+                        text = annotatedString,
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            color = MaterialTheme.colorScheme.onSurface
+                        ),
+                        modifier = Modifier.padding(bottom = 12.dp),
+                        onClick = { offset ->
+                            annotatedString.getStringAnnotations(
+                                tag = "URL",
+                                start = offset,
+                                end = offset
+                            ).firstOrNull()?.let { annotation ->
+                                val intent = Intent(Intent.ACTION_VIEW, annotation.item.toUri())
+                                context.startActivity(intent)
+                            }
+                        }
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showHelpDialog = false }) {
+                    Text(stringResource(R.string.got_it))
+                }
+            }
+        )
+    }
+
+    LaunchedEffect(showSettingsDialog) {
+        if (showSettingsDialog) {
+            tempBaseUrl = currentBaseUrl
+        }
+    }
+
+    if (showFileManagerDialog) {
+        FileManagerDialog(
+            context = context,
+            onDismiss = { showFileManagerDialog = false },
+            onFileDeleted = {
+                modelRepository.refreshAllModels()
+                scope.launch {
+                    snackbarHostState.showSnackbar(context.getString(R.string.file_deleted))
+                }
+            }
+        )
+    }
+
+    if (showEmbeddingManagerDialog) {
+        EmbeddingManagerDialog(
+            context = context,
+            onDismiss = { showEmbeddingManagerDialog = false },
+            onEmbeddingDeleted = {
+                scope.launch {
+                    snackbarHostState.showSnackbar(context.getString(R.string.embedding_deleted))
+                }
+            },
+            onEmbeddingImported = {
+                scope.launch {
+                    snackbarHostState.showSnackbar(context.getString(R.string.embedding_imported))
+                }
+            }
+        )
+    }
+
+    if (showCustomModelDialog) {
+        CustomModelDialog(
+            context,
+            onDismiss = { showCustomModelDialog = false },
+            onModelAdded = { modelName, fileUri, clipSkip, loraFiles ->
+                showCustomModelDialog = false
+                scope.launch {
+                    convertCustomModel(
+                        context = context,
+                        modelName = modelName,
+                        fileUri = fileUri,
+                        clipSkip = clipSkip,
+                        loraFiles = loraFiles,
+                        onProgress = { progress ->
+                            conversionProgress = progress
+                        },
+                        onStart = {
+                            isConverting = true
+                        },
+                        onSuccess = {
+                            isConverting = false
+                            modelRepository.refreshAllModels()
+                            scope.launch {
+                                snackbarHostState.showSnackbar(context.getString(R.string.model_conversion_success))
+                            }
+                        },
+                        onError = { error ->
+                            isConverting = false
+                            scope.launch {
+                                snackbarHostState.showSnackbar(
+                                    context.getString(
+                                        R.string.model_conversion_failed,
+                                        error
+                                    )
+                                )
+                            }
+                        }
+                    )
+                }
+            }
+        )
+    }
+
+    if (showCustomNpuModelDialog) {
+        CustomNpuModelDialog(
+            context,
+            onDismiss = { showCustomNpuModelDialog = false },
+            onModelAdded = { modelName, zipUri ->
+                showCustomNpuModelDialog = false
+                scope.launch {
+                    extractNpuModel(
+                        context = context,
+                        modelName = modelName,
+                        zipUri = zipUri,
+                        onProgress = { progress ->
+                            conversionProgress = progress
+                        },
+                        onStart = {
+                            isConverting = true
+                        },
+                        onSuccess = {
+                            isConverting = false
+                            modelRepository.refreshAllModels()
+                            scope.launch {
+                                snackbarHostState.showSnackbar(context.getString(R.string.npu_model_added_success))
+                            }
+                        },
+                        onError = { error ->
+                            isConverting = false
+                            scope.launch {
+                                snackbarHostState.showSnackbar(
+                                    context.getString(
+                                        R.string.npu_model_add_failed,
+                                        error
+                                    )
+                                )
+                            }
+                        }
+                    )
+                }
+            }
+        )
+    }
+
+    if (showDeleteConfirm && selectedModels.isNotEmpty()) {
+        DeleteConfirmDialog(
+            selectedCount = selectedModels.size,
+            onConfirm = {
+                showDeleteConfirm = false
+                isSelectionMode = false
+
+                scope.launch {
+                    var successCount = 0
+                    selectedModels.forEach { model ->
+                        if (model.deleteModel(context)) {
+                            successCount++
+                        }
+                    }
+
+                    modelRepository.refreshAllModels()
+
+                    snackbarHostState.showSnackbar(
+                        if (successCount == selectedModels.size) context.getString(R.string.delete_success)
+                        else context.getString(R.string.delete_failed)
+                    )
+
+                    selectedModels = emptySet()
+                }
+            },
+            onDismiss = {
+                showDeleteConfirm = false
+            }
+        )
+    }
+
+    showDownloadConfirm?.let { model ->
+        if (downloadingModel != null) {
+            AlertDialog(
+                onDismissRequest = { showDownloadConfirm = null },
+                title = { Text(stringResource(R.string.cannot_download)) },
+                text = { Text(stringResource(R.string.cannot_download_hint)) },
+                confirmButton = {
+                    TextButton(onClick = { showDownloadConfirm = null }) {
+                        Text(stringResource(R.string.confirm))
+                    }
+                }
+            )
+        } else {
+            AlertDialog(
+                onDismissRequest = { showDownloadConfirm = null },
+                title = { Text(stringResource(R.string.download_model)) },
+                text = {
+                    Text(stringResource(R.string.download_model_hint, model.name))
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            showDownloadConfirm = null
+                            downloadingModel = model
+                            currentProgress = null
+                            model.startDownload(context)
+                        }
+                    ) {
+                        Text(stringResource(R.string.confirm))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDownloadConfirm = null }) {
+                        Text(stringResource(R.string.cancel))
+                    }
+                }
+            )
+        }
+    }
+
+    showUpgradeConfirm?.let { model ->
+        AlertDialog(
+            onDismissRequest = { showUpgradeConfirm = null },
+            title = { Text(stringResource(R.string.upgrade_model)) },
+            text = {
+                Text(stringResource(R.string.upgrade_model_hint, model.name))
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showUpgradeConfirm = null
+                        downloadingModel = model
+                        currentProgress = null
+                        model.startDownload(context)
+                    }
+                ) {
+                    Text(stringResource(R.string.confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showUpgradeConfirm = null }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
+    }
+
+    // Delete API model confirm dialog
+    showDeleteApiModelConfirm?.let { apiModel ->
+        AlertDialog(
+            onDismissRequest = { showDeleteApiModelConfirm = null },
+            title = { Text(stringResource(R.string.delete_api_model)) },
+            text = { Text(stringResource(R.string.delete_api_model_confirm, apiModel.name)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        openAIRepository.removeModel(apiModel.id)
+                        showDeleteApiModelConfirm = null
+                    },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
+                ) { Text(stringResource(R.string.delete)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteApiModelConfirm = null }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
+    }
+
+    // Add API model dialog
+    if (showAddApiModelDialog) {
+        AddApiModelDialog(
+            repository = openAIRepository,
+            onDismiss = {
+                showAddApiModelDialog = false
+                apiModelPrefillName = ""
+                apiModelPrefillModelId = ""
+                apiModelPrefillSize = "1024x1024"
+                quickSetupBackendModelId = null
+            },
+            onAdded = {
+                showAddApiModelDialog = false
+                apiModelPrefillName = ""
+                apiModelPrefillModelId = ""
+                apiModelPrefillSize = "1024x1024"
+                quickSetupBackendModelId = null
+                scope.launch {
+                    snackbarHostState.showSnackbar(context.getString(R.string.api_model_added))
+                }
+            },
+            initialName = apiModelPrefillName,
+            initialModelId = apiModelPrefillModelId,
+            initialSize = apiModelPrefillSize,
+            isQuickSetup = quickSetupBackendModelId != null,
+            onStartBackendService = quickSetupBackendModelId?.let { modelId ->
+                {
+                    val size = quickSetupResolution.coerceAtLeast(128)
+                    val intent = Intent(context, BackendService::class.java).apply {
+                        action = BackendService.ACTION_RESTART
+                        putExtra("modelId", modelId)
+                        putExtra("width", size)
+                        putExtra("height", size)
+                    }
+                    context.startForegroundService(intent)
+                }
+            }
+        )
+    }
+
+    Scaffold(
+        topBar = {
+            LargeTopAppBar(
+                title = {
+                    Column {
+                        Text("Local Dream✨")
+                        Text(
+                            if (isSelectionMode) stringResource(
+                                R.string.selected_items,
+                                selectedModels.size
+                            ) else stringResource(R.string.available_models),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                        )
+                    }
+                },
+                navigationIcon = {
+                    if (isSelectionMode) {
+                        IconButton(onClick = {
+                            isSelectionMode = false
+                            selectedModels = emptySet()
+                        }) {
+                            Icon(Icons.Default.Close, stringResource(R.string.cancel))
+                        }
+                    }
+                },
+                actions = {
+                    if (isSelectionMode && selectedModels.isNotEmpty()) {
+                        IconButton(onClick = { showDeleteConfirm = true }) {
+                            Icon(Icons.Default.Delete, stringResource(R.string.delete))
+                        }
+                    }
+                    IconButton(onClick = { showHelpDialog = true }) {
+                        Icon(Icons.AutoMirrored.Filled.Help, stringResource(R.string.help))
+                    }
+                    if (Model.isQualcommDevice()) {
+                        IconButton(onClick = { navController.navigate(Screen.Upscale.route) }) {
+                            Icon(Icons.Default.AutoFixHigh, stringResource(R.string.image_upscale))
+                        }
+                    }
+                    IconButton(onClick = { showSettingsDialog = true }) {
+                        Icon(Icons.Default.Settings, stringResource(R.string.settings))
+                    }
+                },
+                scrollBehavior = scrollBehavior
+            )
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
+    ) { paddingValues ->
+        Column(
+            modifier = modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .nestedScroll(scrollBehavior.nestedScrollConnection)
+        ) {
+            TabRow(
+                selectedTabIndex = pagerState.currentPage,
+                indicator = { tabPositions ->
+                    SecondaryIndicator(
+                        modifier = Modifier.tabIndicatorOffset(tabPositions[pagerState.currentPage]),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                tabTitles.forEachIndexed { index, title ->
+                    Tab(
+                        selected = pagerState.currentPage == index,
+                        onClick = {
+                            scope.launch {
+                                pagerState.animateScrollToPage(index)
+                            }
+                        },
+                        text = {
+                            Text(
+                                text = title,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = if (pagerState.currentPage == index) FontWeight.Bold else FontWeight.Normal
+                            )
+                        }
+                    )
+                }
+            }
+
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.weight(1f)
+            ) { page ->
+                if (page == 2) {
+                    // API Models tab
+                    val apiModels = openAIRepository.models
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(
+                            top = 8.dp,
+                            start = 16.dp,
+                            end = 16.dp,
+                            bottom = 16.dp
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        item {
+                            OutlinedButton(
+                                onClick = {
+                                    quickSetupBackendModelId = null
+                                    showAddApiModelDialog = true
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(
+                                    Icons.Default.Add,
+                                    contentDescription = null,
+                                    modifier = Modifier.padding(end = 8.dp)
+                                )
+                                Text(stringResource(R.string.add_api_model))
+                            }
+                        }
+                        if (downloadedModels.isNotEmpty()) {
+                            item {
+                                Text(
+                                    text = stringResource(R.string.installed_local_models),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                                    modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
+                                )
+                            }
+                            items(downloadedModels, key = { it.id }) { model ->
+                                InstalledModelQuickSetupRow(
+                                    model = model,
+                                    onQuickSetup = {
+                                        val localApiEnabled =
+                                            localApiPrefs.getBoolean("local_api_enabled", true)
+                                        if (!localApiEnabled) {
+                                            scope.launch {
+                                                snackbarHostState.showSnackbar(
+                                                    context.getString(R.string.local_api_disabled_hint)
+                                                )
+                                            }
+                                            return@InstalledModelQuickSetupRow
+                                        }
+
+                                        val port =
+                                            localApiPrefs.getInt("local_api_port", 8081)
+                                                .coerceIn(1, 65535)
+                                        val localApiKey =
+                                            localApiPrefs.getString("local_api_key", "local")
+                                                .orEmpty()
+                                                .ifBlank { "local" }
+                                        val endpoint = "http://127.0.0.1:$port"
+                                        val sz = model.generationSize
+
+                                        val unifiedModel = io.github.xingguangcuican.localdreamoss.data.OpenAIModel(
+                                            id = unifiedLocalApiModelId,
+                                            name = "Local Dream Local API",
+                                            modelId = model.id,
+                                            apiEndpoint = endpoint,
+                                            apiKey = localApiKey,
+                                            description = "",
+                                            supportedSizes = listOf("${sz}x${sz}")
+                                        )
+                                        if (openAIRepository.models.any { it.id == unifiedLocalApiModelId }) {
+                                            openAIRepository.updateModel(unifiedModel)
+                                        } else {
+                                            openAIRepository.addModel(unifiedModel)
+                                        }
+
+                                        quickSetupBackendModelId = model.id
+                                        quickSetupResolution = sz
+                                        val size = quickSetupResolution.coerceAtLeast(128)
+                                        val intent = Intent(context, BackendService::class.java).apply {
+                                            action = BackendService.ACTION_RESTART
+                                            putExtra("modelId", model.id)
+                                            putExtra("width", size)
+                                            putExtra("height", size)
+                                        }
+                                        context.startForegroundService(intent)
+                                        scope.launch {
+                                            snackbarHostState.showSnackbar(
+                                                context.getString(R.string.local_api_quick_setup_done)
+                                            )
+                                        }
+                                    }
+                                )
+                            }
+                            item {
+                                HorizontalDivider(modifier = Modifier.padding(top = 4.dp))
+                            }
+                        }
+                        items(apiModels, key = { it.id }) { apiModel ->
+                            OpenAIModelCard(
+                                model = apiModel,
+                                onClick = {
+                                    navController.navigate(
+                                        io.github.xingguangcuican.localdreamoss.navigation.Screen.OpenAIModelRun.createRoute(apiModel.id)
+                                    )
+                                },
+                                onDeleteClick = { showDeleteApiModelConfirm = apiModel }
+                            )
+                        }
+                        if (apiModels.isEmpty()) {
+                            item {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 32.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Cloud,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(48.dp),
+                                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                                    )
+                                    Text(
+                                        stringResource(R.string.no_api_models),
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        textAlign = TextAlign.Center,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                    )
+                                    Text(
+                                        stringResource(R.string.no_api_models_hint),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        textAlign = TextAlign.Center,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } else {
+                val models = if (page == 0) cpuModels else npuModels
+
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(
+                        top = 8.dp,
+                        start = 16.dp,
+                        end = 16.dp,
+                        bottom = 16.dp
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    if (page == 0) {
+                        item {
+                            AddCustomModelButton(
+                                onClick = { showCustomModelDialog = true },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+
+                    if (page == 1 && Model.isQualcommDevice()) {
+                        item {
+                            AddCustomNpuModelButton(
+                                onClick = { showCustomNpuModelDialog = true },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+
+                    items(
+                        items = models,
+                        key = { model -> "${model.id}_${version}" }
+                    ) { model ->
+                        ModelCard(
+                            model = model,
+                            modifier = Modifier.animateItem(
+                                fadeInSpec = tween(durationMillis = 300),
+                                fadeOutSpec = tween(durationMillis = 300),
+                                placementSpec = spring(
+                                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                                    stiffness = Spring.StiffnessLow
+                                )
+                            ),
+                            isSelected = selectedModels.contains(model),
+                            isSelectionMode = isSelectionMode,
+                            onClick = {
+                                if (!Model.isDeviceSupported() && !model.runOnCpu) {
+                                    scope.launch {
+                                        snackbarHostState.showSnackbar(context.getString(R.string.unsupport_npu))
+                                    }
+                                    return@ModelCard
+                                }
+                                if (isSelectionMode) {
+                                    if (model.isDownloaded) {
+                                        selectedModels = if (selectedModels.contains(model)) {
+                                            selectedModels - model
+                                        } else {
+                                            selectedModels + model
+                                        }
+
+                                        if (selectedModels.isEmpty()) {
+                                            isSelectionMode = false
+                                        }
+                                    }
+                                } else {
+                                    if (!model.isDownloaded) {
+                                        showDownloadConfirm = model
+                                    } else {
+                                        navController.navigate(Screen.ModelRun.createRoute(model.id))
+                                    }
+                                }
+                            },
+                            onLongClick = {
+                                if (model.isDownloaded && !isSelectionMode) {
+                                    isSelectionMode = true
+                                    selectedModels = setOf(model)
+                                }
+                            },
+                            onUpdateClick = {
+                                showUpgradeConfirm = model
+                            }
+                        )
+                    }
+
+                    if (models.isEmpty()) {
+                        item {
+                            var visible by remember { mutableStateOf(false) }
+                            LaunchedEffect(Unit) { visible = true }
+                            AnimatedVisibility(
+                                visible = visible,
+                                enter = fadeIn(animationSpec = tween(500)) + expandVertically()
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 32.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.SearchOff,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(48.dp),
+                                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                                    )
+                                    Text(
+                                        text = if (page == 0)
+                                            stringResource(R.string.no_cpu_models)
+                                        else
+                                            stringResource(R.string.no_npu_models),
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        textAlign = TextAlign.Center,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                } // end else
+            }
+
+            Row(
+                modifier = Modifier
+                    .padding(16.dp)
+                    .fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center
+            ) {
+                TabPageIndicator(
+                    pageCount = 3,
+                    currentPage = pagerState.currentPage,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+            }
+        }
+    }
+
+    AnimatedVisibility(
+        visible = showSettingsDialog,
+        enter = expandVertically() + fadeIn(),
+        exit = shrinkVertically() + fadeOut()
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+        ) {
+            Scaffold(
+                topBar = {
+                    TopAppBar(
+                        title = { Text(stringResource(R.string.settings)) },
+                        navigationIcon = {
+                            IconButton(onClick = { showSettingsDialog = false }) {
+                                Icon(Icons.Default.ArrowBack, stringResource(R.string.back))
+                            }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = MaterialTheme.colorScheme.surface
+                        )
+                    )
+                }
+            ) { paddingValues ->
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues)
+                        .padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(24.dp),
+                    contentPadding = PaddingValues(vertical = 16.dp)
+                ) {
+                    // Download source settings section
+                    item {
+                        Column {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.padding(bottom = 12.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CloudDownload,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Text(
+                                    stringResource(R.string.download_source),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                            Text(
+                                stringResource(R.string.download_settings_hint),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                                modifier = Modifier.padding(bottom = 12.dp)
+                            )
+
+                            var expanded by remember { mutableStateOf(false) }
+                            val focusRequester = remember { FocusRequester() }
+
+                            ExposedDropdownMenuBox(
+                                expanded = expanded,
+                                onExpandedChange = { expanded = !expanded }
+                            ) {
+                                OutlinedTextField(
+                                    value = when (selectedSource) {
+                                        "huggingface" -> "https://huggingface.co/"
+                                        "hf-mirror" -> "https://hf-mirror.com/"
+                                        else -> tempBaseUrl
+                                    },
+                                    onValueChange = {
+                                        if (selectedSource == "custom") tempBaseUrl = it
+                                    },
+                                    label = { Text(stringResource(R.string.download_from)) },
+                                    readOnly = selectedSource != "custom",
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .menuAnchor()
+                                        .focusRequester(focusRequester)
+                                        .onFocusChanged { focusState ->
+                                            if (!focusState.isFocused && selectedSource == "custom") {
+                                                scope.launch {
+                                                    if (tempBaseUrl.isNotEmpty() && tempBaseUrl != currentBaseUrl) {
+                                                        generationPreferences.saveBaseUrl(
+                                                            tempBaseUrl
+                                                        )
+                                                        currentBaseUrl = tempBaseUrl
+                                                        version += 1
+                                                    }
+                                                }
+                                            }
+                                        },
+                                    trailingIcon = {
+                                        IconButton(onClick = {}) {
+                                            ExposedDropdownMenuDefaults.TrailingIcon(
+                                                expanded = expanded
+                                            )
+                                        }
+                                    },
+                                    singleLine = true
+                                )
+
+
+                                LaunchedEffect(selectedSource) {
+                                    if (selectedSource == "custom") {
+                                        focusRequester.requestFocus()
+                                    }
+                                }
+                                ExposedDropdownMenu(
+                                    expanded = expanded,
+                                    onDismissRequest = { expanded = false }
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.source_huggingface)) },
+                                        onClick = {
+                                            selectedSource = "huggingface"
+                                            val newUrl = "https://huggingface.co/"
+                                            tempBaseUrl = newUrl
+                                            expanded = false
+                                            scope.launch {
+                                                generationPreferences.saveSelectedSource("huggingface")
+                                                generationPreferences.saveBaseUrl(newUrl)
+                                                if (currentBaseUrl != newUrl) {
+                                                    currentBaseUrl = newUrl
+                                                    version += 1
+                                                }
+                                            }
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.source_hf_mirror)) },
+                                        onClick = {
+                                            selectedSource = "hf-mirror"
+                                            val newUrl = "https://hf-mirror.com/"
+                                            tempBaseUrl = newUrl
+                                            expanded = false
+                                            scope.launch {
+                                                generationPreferences.saveSelectedSource("hf-mirror")
+                                                generationPreferences.saveBaseUrl(newUrl)
+                                                if (currentBaseUrl != newUrl) {
+                                                    currentBaseUrl = newUrl
+                                                    version += 1
+                                                }
+                                            }
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.source_custom)) },
+                                        onClick = {
+                                            selectedSource = "custom"
+                                            tempBaseUrl = "https://"
+                                            expanded = false
+                                            scope.launch {
+                                                generationPreferences.saveSelectedSource("custom")
+                                            }
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    // Local API settings section
+                    item {
+                        Column {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.padding(bottom = 12.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Cloud,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Text(
+                                    stringResource(R.string.local_api_settings),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                            Text(
+                                stringResource(R.string.local_api_settings_hint),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                                modifier = Modifier.padding(bottom = 12.dp)
+                            )
+
+                            var localApiEnabled by remember {
+                                mutableStateOf(localApiPrefs.getBoolean("local_api_enabled", true))
+                            }
+                            var localApiPort by remember {
+                                mutableStateOf(localApiPrefs.getInt("local_api_port", 8081).toString())
+                            }
+                            var localApiKey by remember {
+                                mutableStateOf(
+                                    localApiPrefs.getString("local_api_key", "local").orEmpty()
+                                        .ifBlank { "local" }
+                                )
+                            }
+
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                                )
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = stringResource(R.string.enable_local_api_model),
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                            Text(
+                                                text = stringResource(R.string.enable_local_api_model_hint),
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                                            )
+                                        }
+                                        Switch(
+                                            checked = localApiEnabled,
+                                            onCheckedChange = {
+                                                localApiEnabled = it
+                                                localApiPrefs.edit { putBoolean("local_api_enabled", it) }
+                                            }
+                                        )
+                                    }
+                                    HorizontalDivider(
+                                        modifier = Modifier.padding(vertical = 12.dp),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f)
+                                    )
+                                    OutlinedTextField(
+                                        value = localApiPort,
+                                        onValueChange = { text ->
+                                            val filtered = text.filter { c -> c.isDigit() }.take(5)
+                                            localApiPort = filtered
+                                            filtered.toIntOrNull()?.takeIf { it in 1..65535 }?.let { port ->
+                                                localApiPrefs.edit { putInt("local_api_port", port) }
+                                            }
+                                        },
+                                        label = { Text(stringResource(R.string.local_api_port)) },
+                                        placeholder = { Text(stringResource(R.string.local_api_port_hint)) },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        singleLine = true,
+                                        enabled = localApiEnabled,
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                                    )
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    OutlinedTextField(
+                                        value = localApiKey,
+                                        onValueChange = {
+                                            localApiKey = it
+                                            localApiPrefs.edit { putString("local_api_key", it) }
+                                        },
+                                        label = { Text(stringResource(R.string.api_key)) },
+                                        placeholder = { Text(stringResource(R.string.api_key_hint)) },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        singleLine = true,
+                                        enabled = localApiEnabled
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Feature settings section
+                    item {
+                        Column {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.padding(bottom = 12.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Tune,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Text(
+                                    stringResource(R.string.feature_settings),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                                )
+                            ) {
+                                val preferences = LocalContext.current.getSharedPreferences(
+                                    "app_prefs",
+                                    Context.MODE_PRIVATE
+                                )
+                                var useImg2img by remember {
+                                    mutableStateOf(
+                                        preferences.getBoolean("use_img2img", true).also {
+                                            if (!preferences.contains("use_img2img")) {
+                                                preferences.edit {
+                                                    putBoolean(
+                                                        "use_img2img",
+                                                        true
+                                                    )
+                                                }
+                                            }
+                                        })
+                                }
+                                var showProcess by remember {
+                                    mutableStateOf(
+                                        preferences.getBoolean("show_diffusion_process", false)
+                                    )
+                                }
+
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text(
+                                            text = "img2img",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                        Text(
+                                            stringResource(R.string.img2img_hint),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                                        )
+                                    }
+                                    Switch(
+                                        checked = useImg2img,
+                                        onCheckedChange = {
+                                            useImg2img = it
+                                            preferences.edit {
+                                                putBoolean("use_img2img", it)
+                                            }
+                                        }
+                                    )
+                                }
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(horizontal = 16.dp),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f)
+                                )
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text(
+                                            text = stringResource(R.string.show_process),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                        Text(
+                                            stringResource(R.string.show_process_hint),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                                        )
+                                    }
+                                    Switch(
+                                        checked = showProcess,
+                                        onCheckedChange = {
+                                            showProcess = it
+                                            preferences.edit {
+                                                putBoolean("show_diffusion_process", it)
+                                            }
+                                        }
+                                    )
+                                }
+                                AnimatedVisibility(visible = showProcess) {
+                                    Column {
+                                        HorizontalDivider(
+                                            modifier = Modifier.padding(horizontal = 16.dp),
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(
+                                                alpha = 0.2f
+                                            )
+                                        )
+                                        Column(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(16.dp)
+                                        ) {
+                                            var stride by remember {
+                                                mutableStateOf(
+                                                    preferences.getInt("show_diffusion_stride", 1)
+                                                        .toFloat()
+                                                )
+                                            }
+                                            Text(
+                                                text = stringResource(R.string.preview_stride),
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                            Text(
+                                                stringResource(
+                                                    R.string.preview_stride_hint,
+                                                    stride.toInt()
+                                                ),
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurface.copy(
+                                                    alpha = 0.7f
+                                                )
+                                            )
+                                            Slider(
+                                                value = stride,
+                                                onValueChange = {
+                                                    stride = it
+                                                    preferences.edit {
+                                                        putInt("show_diffusion_stride", it.toInt())
+                                                    }
+                                                },
+                                                valueRange = 1f..10f,
+                                                steps = 8,
+                                                modifier = Modifier.fillMaxWidth()
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    // Embedding management section
+                    item {
+                        Column {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.padding(bottom = 12.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Description,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Text(
+                                    stringResource(R.string.embedding_management),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                            OutlinedButton(
+                                onClick = {
+                                    showEmbeddingManagerDialog = true
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Description,
+                                    contentDescription = null,
+                                    modifier = Modifier.padding(end = 8.dp)
+                                )
+                                Text(stringResource(R.string.embedding_manager))
+                            }
+                        }
+                    }
+
+                    // File management section
+                    item {
+                        Column {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.padding(bottom = 12.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Folder,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Text(
+                                    stringResource(R.string.file_management),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                            OutlinedButton(
+                                onClick = {
+                                    showFileManagerDialog = true
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.FolderOpen,
+                                    contentDescription = null,
+                                    modifier = Modifier.padding(end = 8.dp)
+                                )
+                                Text(stringResource(R.string.file_manager))
+
+                            }
+
+                        }
+
+                    }
+                }
+            }
+        }
+    }
+
+    if (isConverting) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f))
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) { },
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                CircularProgressIndicator()
+                Text(
+                    text = if (conversionProgress.isNotEmpty()) conversionProgress else stringResource(
+                        R.string.converting
+                    ),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+        }
+    }
+
+    // Compact floating download progress card
+    if (downloadingModel != null) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.9f))
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) { },
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(24.dp),
+                modifier = Modifier.padding(32.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.downloading_model, downloadingModel!!.name),
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.Medium
+                )
+
+                currentProgress?.let { progress ->
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.fillMaxWidth(0.8f)
+                    ) {
+                        LinearProgressIndicator(
+                            progress = progress.progress,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(8.dp)
+                                .clip(MaterialTheme.shapes.extraSmall),
+                            color = MaterialTheme.colorScheme.primary,
+                            trackColor = MaterialTheme.colorScheme.surfaceVariant
+                        )
+
+                        Text(
+                            text = "${(progress.progress * 100).toInt()}% - ${formatBytes(progress.downloadedBytes)} / ${
+                                formatBytes(
+                                    progress.totalBytes
+                                )
+                            }",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                        )
+                    }
+                } ?: Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    CircularProgressIndicator()
+                    Text(
+                        text = stringResource(R.string.extracting),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text(
+                    text = stringResource(R.string.download_background_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+            }
+        }
+    }
+}
+
+private fun formatBytes(bytes: Long): String {
+    return when {
+        bytes < 1024 -> "$bytes B"
+        bytes < 1024 * 1024 -> "${bytes / 1024} KB"
+        bytes < 1024 * 1024 * 1024 -> "${bytes / (1024 * 1024)} MB"
+        else -> String.format("%.2f GB", bytes / (1024.0 * 1024.0 * 1024.0))
+    }
+}
+
+@Composable
+fun TabPageIndicator(
+    pageCount: Int,
+    currentPage: Int,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = modifier
+    ) {
+        repeat(pageCount) { index ->
+            val isSelected = currentPage == index
+            val sizeFloat by animateFloatAsState(
+                targetValue = if (isSelected) 10f else 8f,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                    stiffness = Spring.StiffnessMedium
+                ),
+                label = "IndicatorSize"
+            )
+            val color by animateColorAsState(
+                targetValue = if (isSelected)
+                    MaterialTheme.colorScheme.primary
+                else
+                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f),
+                animationSpec = tween(durationMillis = 300),
+                label = "IndicatorColor"
+            )
+            Box(
+                modifier = Modifier
+                    .size(sizeFloat.dp)
+                    .background(
+                        color = color,
+                        shape = CircleShape
+                    )
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ModelCard(
+    model: Model,
+    isSelected: Boolean,
+    isSelectionMode: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    onUpdateClick: () -> Unit = {},
+    modifier: Modifier = Modifier
+) {
+    val elevation by animateFloatAsState(
+        targetValue = if (isSelected) 8f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
+        label = "CardElevationAnimation"
+    )
+
+    val containerColor = when {
+        isSelected -> MaterialTheme.colorScheme.secondaryContainer
+        !model.isDownloaded && isSelectionMode -> MaterialTheme.colorScheme.surfaceContainerLow
+        else -> MaterialTheme.colorScheme.surfaceContainerLowest
+    }
+
+    val contentColor = when {
+        isSelected -> MaterialTheme.colorScheme.onSecondaryContainer
+        !model.isDownloaded && isSelectionMode -> MaterialTheme.colorScheme.onSurface.copy(
+            alpha = 0.5f
+        )
+
+        else -> MaterialTheme.colorScheme.onSurface
+    }
+
+    val backgroundColor by animateColorAsState(
+        targetValue = containerColor,
+        animationSpec = tween(durationMillis = 300),
+        label = "CardBackgroundColorAnimation"
+    )
+
+    ElevatedCard(
+        modifier = modifier
+            .fillMaxWidth()
+            .pointerInput(isSelectionMode, model.isDownloaded) {
+                detectTapGestures(
+                    onLongPress = {
+                        if (model.isDownloaded && !isSelectionMode) onLongClick()
+                    },
+                    onTap = {
+                        if (!isSelectionMode || (model.isDownloaded)) {
+                            onClick()
+                        }
+                    }
+                )
+            },
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = backgroundColor,
+            contentColor = contentColor
+        ),
+        elevation = CardDefaults.elevatedCardElevation(
+            defaultElevation = elevation.dp
+        ),
+        shape = MaterialTheme.shapes.large
+    ) {
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(8.dp),
+                shape = MaterialTheme.shapes.extraSmall,
+                color = if (model.runOnCpu)
+                    MaterialTheme.colorScheme.tertiaryContainer
+                else
+                    MaterialTheme.colorScheme.primaryContainer
+            ) {
+                Text(
+                    text = if (model.runOnCpu) "CPU" else "NPU",
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (model.runOnCpu)
+                        MaterialTheme.colorScheme.onTertiaryContainer
+                    else
+                        MaterialTheme.colorScheme.onPrimaryContainer,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+            ) {
+                Text(
+                    text = model.name,
+                    style = MaterialTheme.typography.titleLarge,
+                    color = contentColor
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = model.description,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    color = contentColor.copy(alpha = 0.8f)
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.SdStorage,
+                                contentDescription = "model size",
+                                tint = contentColor.copy(alpha = 0.6f),
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = model.approximateSize,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = contentColor.copy(alpha = 0.7f)
+                            )
+                        }
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AspectRatio,
+                                contentDescription = "image size",
+                                tint = contentColor.copy(alpha = 0.6f),
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = if (model.runOnCpu) "128~512" else "${model.generationSize}×${model.generationSize}",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = contentColor.copy(alpha = 0.7f)
+                            )
+                        }
+                    }
+
+                    when {
+                        model.isDownloaded -> {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.CheckCircle,
+                                        contentDescription = "downloaded",
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    if (!model.needsUpgrade or isSelectionMode) {
+                                        Text(
+                                            text = stringResource(R.string.downloaded),
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                    }
+                                }
+
+                                if (model.needsUpgrade && !isSelectionMode) {
+                                    FilledTonalButton(
+                                        onClick = onUpdateClick,
+                                        modifier = Modifier.height(28.dp),
+                                        colors = ButtonDefaults.filledTonalButtonColors(
+                                            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                                            contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+                                        ),
+                                        contentPadding = PaddingValues(
+                                            horizontal = 12.dp,
+                                            vertical = 4.dp
+                                        )
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Update,
+                                            contentDescription = "update",
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = stringResource(R.string.update),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        else -> {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CloudDownload,
+                                    contentDescription = "download",
+                                    tint = contentColor.copy(alpha = 0.6f),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = stringResource(R.string.download),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = contentColor.copy(alpha = 0.6f)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun formatFileSize(size: Long): String {
+    val df = DecimalFormat("#.##")
+    return when {
+        size < 1024 -> "${size}B"
+        size < 1024 * 1024 -> "${df.format(size / 1024.0)}KB"
+        size < 1024 * 1024 * 1024 -> "${df.format(size / (1024.0 * 1024.0))}MB"
+        else -> "${df.format(size / (1024.0 * 1024.0 * 1024.0))}GB"
+    }
+}
+
+@Composable
+private fun FileManagerDialog(
+    context: Context,
+    onDismiss: () -> Unit,
+    onFileDeleted: () -> Unit
+) {
+    var modelFolders by remember { mutableStateOf<List<Pair<String, Int>>>(emptyList()) }
+    var selectedFolder by remember { mutableStateOf<String?>(null) }
+    var folderFiles by remember { mutableStateOf<List<File>>(emptyList()) }
+    var showDeleteConfirm by remember { mutableStateOf<File?>(null) }
+    var isLoading by remember { mutableStateOf(true) }
+
+    fun loadFolders() {
+        val modelsDir = Model.getModelsDir(context)
+        val folders = mutableListOf<Pair<String, Int>>()
+
+        if (modelsDir.exists() && modelsDir.isDirectory) {
+            modelsDir.listFiles()?.forEach { modelDir ->
+                if (modelDir.isDirectory) {
+                    val fileCount = modelDir.listFiles()?.size ?: 0
+                    if (fileCount > 0) {
+                        folders.add(Pair(modelDir.name, fileCount))
+                    }
+                }
+            }
+        }
+        modelFolders = folders
+        isLoading = false
+    }
+
+    fun loadFilesForFolder(folderName: String) {
+        val modelsDir = Model.getModelsDir(context)
+        val folderDir = File(modelsDir, folderName)
+        folderFiles = folderDir.listFiles()?.toList() ?: emptyList()
+    }
+
+    LaunchedEffect(Unit) {
+        loadFolders()
+    }
+
+    if (showDeleteConfirm != null) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = null },
+            title = { Text(stringResource(R.string.delete_file)) },
+            text = { Text(stringResource(R.string.delete_file_confirm, showDeleteConfirm!!.name)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val fileToDelete = showDeleteConfirm!!
+                        if (fileToDelete.delete()) {
+                            onFileDeleted()
+                            selectedFolder?.let { loadFilesForFolder(it) }
+                            loadFolders()
+                        }
+                        showDeleteConfirm = null
+                    },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text(stringResource(R.string.delete))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = null }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (selectedFolder != null) {
+                    IconButton(
+                        onClick = { selectedFolder = null },
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ArrowBack,
+                            contentDescription = stringResource(R.string.back_to_folders),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+                Text(
+                    text = selectedFolder?.let {
+                        stringResource(R.string.model_folder, it)
+                    } ?: stringResource(R.string.file_manager),
+                    style = MaterialTheme.typography.headlineSmall
+                )
+            }
+        },
+        text = {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(400.dp)
+            ) {
+                if (isLoading) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator()
+                        Text(
+                            stringResource(R.string.loading_files),
+                            modifier = Modifier.padding(top = 48.dp),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                } else if (selectedFolder == null) {
+                    if (modelFolders.isEmpty()) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.FolderOpen,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(48.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                                )
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Text(
+                                    stringResource(R.string.no_model_files),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                )
+                            }
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(modelFolders) { (folderName, fileCount) ->
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .pointerInput(Unit) {
+                                            detectTapGestures(
+                                                onTap = {
+                                                    selectedFolder = folderName
+                                                    loadFilesForFolder(folderName)
+                                                }
+                                            )
+                                        },
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                                    )
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(16.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Folder,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary
+                                            )
+                                            Column {
+                                                Text(
+                                                    text = folderName,
+                                                    style = MaterialTheme.typography.bodyLarge,
+                                                    fontWeight = FontWeight.Medium
+                                                )
+                                                Text(
+                                                    text = stringResource(
+                                                        R.string.file_count,
+                                                        fileCount
+                                                    ),
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurface.copy(
+                                                        alpha = 0.6f
+                                                    )
+                                                )
+                                            }
+                                        }
+                                        Icon(
+                                            imageVector = Icons.Default.ChevronRight,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    if (folderFiles.isEmpty()) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                stringResource(R.string.no_model_files),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            )
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(folderFiles) { file ->
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                                    )
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(12.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.InsertDriveFile,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.secondary
+                                            )
+                                            Column {
+                                                Text(
+                                                    text = file.name,
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    fontWeight = FontWeight.Medium
+                                                )
+                                                Text(
+                                                    text = formatFileSize(file.length()),
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurface.copy(
+                                                        alpha = 0.6f
+                                                    )
+                                                )
+                                            }
+                                        }
+
+                                        IconButton(
+                                            onClick = { showDeleteConfirm = file },
+                                            colors = IconButtonDefaults.iconButtonColors(
+                                                contentColor = MaterialTheme.colorScheme.error
+                                            )
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Delete,
+                                                contentDescription = stringResource(R.string.delete_file)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.close))
+            }
+        }
+    )
+}
+
+@Composable
+fun AddCustomModelButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onTap = { onClick() }
+                )
+            },
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+        ),
+        shape = MaterialTheme.shapes.extraLarge
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.Add,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = stringResource(R.string.add_custom_model),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.Medium
+            )
+        }
+    }
+}
+
+@Composable
+fun AddCustomNpuModelButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onTap = { onClick() }
+                )
+            },
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+        ),
+        shape = MaterialTheme.shapes.extraLarge
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.Add,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = stringResource(R.string.add_custom_npu_model),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                fontWeight = FontWeight.Medium
+            )
+        }
+    }
+}
+
+@Composable
+fun CustomNpuModelDialog(
+    context: Context,
+    onDismiss: () -> Unit,
+    onModelAdded: (String, Uri) -> Unit
+) {
+    var modelName by remember { mutableStateOf("") }
+    var selectedZipUri by remember { mutableStateOf<Uri?>(null) }
+
+    val zipPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        uri?.let {
+            selectedZipUri = it
+            if (modelName.isBlank()) {
+                getFileNameFromUri(context, it)?.let { fileName ->
+                    modelName = fileName.substringBeforeLast(".")
+                }
+            }
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = stringResource(R.string.add_custom_npu_model),
+                style = MaterialTheme.typography.headlineSmall
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.custom_npu_model_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                OutlinedTextField(
+                    value = modelName,
+                    onValueChange = { modelName = it },
+                    label = { Text(stringResource(R.string.custom_model_name)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    placeholder = { Text(stringResource(R.string.custom_model_name_hint)) }
+                )
+
+                OutlinedButton(
+                    onClick = {
+                        zipPickerLauncher.launch("application/zip")
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Folder,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = selectedZipUri?.let { stringResource(R.string.zip_file_selected) }
+                            ?: stringResource(R.string.select_zip_file)
+                    )
+                }
+
+                selectedZipUri?.let { uri ->
+                    Text(
+                        text = "Selected: ${getCleanFileName(uri)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    if (modelName.isNotBlank() && selectedZipUri != null) {
+                        onModelAdded(modelName, selectedZipUri!!)
+                    }
+                },
+                enabled = modelName.isNotBlank() && selectedZipUri != null
+            ) {
+                Text(stringResource(R.string.add_model))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        }
+    )
+}
+
+@Composable
+fun CustomModelDialog(
+    context: Context,
+    onDismiss: () -> Unit,
+    onModelAdded: (String, Uri, Int, List<LoRAFile>) -> Unit
+) {
+    var modelName by remember { mutableStateOf("") }
+    var selectedFileUri by remember { mutableStateOf<Uri?>(null) }
+    var clipSkip by remember { mutableStateOf(1) }
+    var selectedLoraFiles by remember { mutableStateOf<List<LoRAFile>>(emptyList()) }
+
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        uri?.let {
+            selectedFileUri = it
+            if (modelName.isBlank()) {
+                getFileNameFromUri(context, it)?.let { fileName ->
+                    modelName = fileName.substringBeforeLast(".")
+                }
+            }
+        }
+    }
+
+    val loraPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        uri?.let {
+            selectedLoraFiles = selectedLoraFiles + LoRAFile(it)
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = stringResource(R.string.add_custom_model),
+                style = MaterialTheme.typography.headlineSmall
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.custom_model_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                OutlinedTextField(
+                    value = modelName,
+                    onValueChange = { modelName = it },
+                    label = { Text(stringResource(R.string.custom_model_name)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    placeholder = { Text(stringResource(R.string.custom_model_name_hint)) }
+                )
+
+                Column(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FilterChip(
+                            selected = clipSkip == 1,
+                            onClick = { clipSkip = 1 },
+                            label = { Text("Clip Skip 1") },
+                            modifier = Modifier.weight(1f)
+                        )
+                        FilterChip(
+                            selected = clipSkip == 2,
+                            onClick = { clipSkip = 2 },
+                            label = { Text("Clip Skip 2") },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    Text(
+                        text = stringResource(R.string.clip_skip_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+
+                OutlinedButton(
+                    onClick = {
+                        filePickerLauncher.launch("application/octet-stream")
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Folder,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = selectedFileUri?.let { stringResource(R.string.file_selected) }
+                            ?: stringResource(R.string.select_model_file)
+                    )
+                }
+
+                selectedFileUri?.let { uri ->
+                    Text(
+                        text = "Selected: ${getCleanFileName(uri)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                    )
+                }
+
+                Column(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = stringResource(R.string.lora_files_optional),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+
+                    OutlinedButton(
+                        onClick = {
+                            loraPickerLauncher.launch("application/octet-stream")
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(stringResource(R.string.add_lora_file))
+                    }
+
+                    if (selectedLoraFiles.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = stringResource(R.string.selected_lora_files),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        selectedLoraFiles.forEachIndexed { index, loraFile ->
+                            key(loraFile.uri.toString()) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 2.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "${index + 1}. ${getCleanFileName(loraFile.uri)}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+                                            modifier = Modifier.weight(1f)
+                                        )
+
+                                        IconButton(
+                                            onClick = {
+                                                selectedLoraFiles =
+                                                    selectedLoraFiles.filterIndexed { i, _ -> i != index }
+                                            },
+                                            modifier = Modifier.size(24.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Close,
+                                                contentDescription = "delete",
+                                                modifier = Modifier.size(16.dp),
+                                                tint = MaterialTheme.colorScheme.error
+                                            )
+                                        }
+                                    }
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = stringResource(R.string.lora_weight),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+
+                                        Slider(
+                                            value = loraFile.weight,
+                                            onValueChange = { newWeight ->
+                                                selectedLoraFiles =
+                                                    selectedLoraFiles.mapIndexed { i, file ->
+                                                        if (i == index) file.copy(weight = newWeight) else file
+                                                    }
+                                            },
+                                            valueRange = 0f..2f,
+                                            steps = 39,
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .height(24.dp),
+                                            colors = SliderDefaults.colors(
+                                                thumbColor = MaterialTheme.colorScheme.primary,
+                                                activeTrackColor = MaterialTheme.colorScheme.primary,
+                                                inactiveTrackColor = MaterialTheme.colorScheme.outline.copy(
+                                                    alpha = 0.3f
+                                                )
+                                            )
+                                        )
+
+                                        Text(
+                                            text = "%.2f".format(loraFile.weight),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+                                            modifier = Modifier.width(35.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    if (modelName.isNotBlank() && selectedFileUri != null) {
+                        onModelAdded(modelName, selectedFileUri!!, clipSkip, selectedLoraFiles)
+                    }
+                },
+                enabled = modelName.isNotBlank() && selectedFileUri != null
+            ) {
+                Text(stringResource(R.string.add_model))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        }
+    )
+}
+
+suspend fun extractNpuModel(
+    context: Context,
+    modelName: String,
+    zipUri: Uri,
+    onProgress: (String) -> Unit,
+    onStart: () -> Unit,
+    onSuccess: () -> Unit,
+    onError: (String) -> Unit
+) = withContext(Dispatchers.IO) {
+    try {
+        withContext(Dispatchers.Main) {
+            onStart()
+            onProgress(context.getString(R.string.preparing_npu_model))
+        }
+
+        if (!Model.isQualcommDevice()) {
+            withContext(Dispatchers.Main) {
+                onError("Only Qualcomm devices are supported for custom NPU models")
+            }
+            return@withContext
+        }
+
+        val modelId = modelName.replace(" ", "")
+
+        val modelsDir = File(context.filesDir, "models")
+        if (!modelsDir.exists()) {
+            modelsDir.mkdirs()
+        }
+
+        val modelDir = File(modelsDir, modelId)
+        if (modelDir.exists()) {
+            modelDir.deleteRecursively()
+        }
+        modelDir.mkdirs()
+
+        withContext(Dispatchers.Main) {
+            onProgress(context.getString(R.string.extracting_zip_file))
+        }
+
+        val inputStream = context.contentResolver.openInputStream(zipUri)
+            ?: throw Exception("Cannot open selected zip file")
+
+        ZipInputStream(inputStream.buffered()).use { zipInputStream ->
+            var zipEntry = zipInputStream.nextEntry
+
+            while (zipEntry != null) {
+                if (!zipEntry.isDirectory) {
+                    val fileName = zipEntry.name.substringAfterLast('/')
+
+                    if (fileName.isNotEmpty() && !fileName.startsWith(".") && !fileName.startsWith("__MACOSX")) {
+                        val outputFile = File(modelDir, fileName)
+
+                        BufferedOutputStream(outputFile.outputStream()).use { outputStream ->
+                            zipInputStream.copyTo(outputStream)
+                        }
+
+                        withContext(Dispatchers.Main) {
+                            onProgress("Extracted: $fileName")
+                        }
+                    }
+                }
+                zipEntry = zipInputStream.nextEntry
+            }
+        }
+
+        val npuCustomFile = File(modelDir, "npucustom")
+        npuCustomFile.createNewFile()
+
+        withContext(Dispatchers.Main) {
+            onSuccess()
+        }
+
+    } catch (e: Exception) {
+        Log.e("NpuModelExtract", "Extraction failed", e)
+
+        val modelId = modelName.replace(" ", "")
+        val modelDir = File(File(context.filesDir, "models"), modelId)
+        if (modelDir.exists()) {
+            modelDir.deleteRecursively()
+        }
+
+        withContext(Dispatchers.Main) {
+            onError("Extraction failed: ${e.message}")
+        }
+    }
+}
+
+@Composable
+fun EmbeddingManagerDialog(
+    context: Context,
+    onDismiss: () -> Unit,
+    onEmbeddingDeleted: () -> Unit,
+    onEmbeddingImported: () -> Unit
+) {
+    var embeddingFiles by remember { mutableStateOf<List<File>>(emptyList()) }
+    var showDeleteConfirm by remember { mutableStateOf<File?>(null) }
+    var isLoading by remember { mutableStateOf(true) }
+    val scope = rememberCoroutineScope()
+
+    fun loadEmbeddings() {
+        val embeddingsDir = File(context.filesDir, "embeddings")
+        if (!embeddingsDir.exists()) {
+            embeddingsDir.mkdirs()
+        }
+        embeddingFiles = embeddingsDir.listFiles()?.filter {
+            it.isFile && it.extension == "safetensors"
+        }?.sortedBy { it.name } ?: emptyList()
+        isLoading = false
+    }
+
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    val embeddingPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        uri?.let {
+            scope.launch {
+                importEmbedding(context, it, {
+                    loadEmbeddings()
+                    onEmbeddingImported()
+                }) { error ->
+                    errorMessage = error
+                }
+            }
+        }
+    }
+
+    if (errorMessage != null) {
+        AlertDialog(
+            onDismissRequest = { errorMessage = null },
+            title = { Text(stringResource(R.string.embedding_import_failed, "")) },
+            text = { Text(errorMessage ?: "") },
+            confirmButton = {
+                TextButton(onClick = { errorMessage = null }) {
+                    Text(stringResource(R.string.confirm))
+                }
+            }
+        )
+    }
+
+    LaunchedEffect(Unit) {
+        loadEmbeddings()
+    }
+
+    if (showDeleteConfirm != null) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = null },
+            title = { Text(stringResource(R.string.delete_embedding)) },
+            text = {
+                Text(
+                    stringResource(
+                        R.string.delete_embedding_confirm,
+                        showDeleteConfirm!!.name
+                    )
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val fileToDelete = showDeleteConfirm!!
+                        if (fileToDelete.delete()) {
+                            onEmbeddingDeleted()
+                            loadEmbeddings()
+                        }
+                        showDeleteConfirm = null
+                    },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text(stringResource(R.string.delete))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = null }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = stringResource(R.string.embedding_manager),
+                style = MaterialTheme.typography.headlineSmall
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(400.dp)
+            ) {
+                if (isLoading) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator()
+                    }
+                } else if (embeddingFiles.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Description,
+                                contentDescription = null,
+                                modifier = Modifier.size(48.dp),
+                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                stringResource(R.string.no_embeddings),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            )
+                        }
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(embeddingFiles) { file ->
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                                )
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(12.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Description,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                        Column {
+                                            Text(
+                                                text = file.nameWithoutExtension,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                            Text(
+                                                text = formatFileSize(file.length()),
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurface.copy(
+                                                    alpha = 0.6f
+                                                )
+                                            )
+                                        }
+                                    }
+
+                                    IconButton(
+                                        onClick = { showDeleteConfirm = file },
+                                        colors = IconButtonDefaults.iconButtonColors(
+                                            contentColor = MaterialTheme.colorScheme.error
+                                        )
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Delete,
+                                            contentDescription = stringResource(R.string.delete_embedding)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                OutlinedButton(
+                    onClick = {
+                        embeddingPickerLauncher.launch("application/octet-stream")
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(stringResource(R.string.import_embedding))
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.close))
+            }
+        }
+    )
+}
+
+suspend fun importEmbedding(
+    context: Context,
+    fileUri: Uri,
+    onSuccess: () -> Unit,
+    onError: (String) -> Unit
+) = withContext(Dispatchers.IO) {
+    try {
+        val embeddingsDir = File(context.filesDir, "embeddings")
+        if (!embeddingsDir.exists()) {
+            embeddingsDir.mkdirs()
+        }
+
+        val fileName =
+            context.contentResolver.query(fileUri, null, null, null, null)?.use { cursor ->
+                val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                cursor.moveToFirst()
+                cursor.getString(nameIndex)
+            } ?: "embedding_${System.currentTimeMillis()}.safetensors"
+
+        // Validate file extension
+        if (!fileName.endsWith(".safetensors", ignoreCase = true)) {
+            withContext(Dispatchers.Main) {
+                onError(context.getString(R.string.only_safetensors_supported))
+            }
+            return@withContext
+        }
+
+        val targetFile = File(embeddingsDir, fileName)
+
+        context.contentResolver.openInputStream(fileUri)?.use { input ->
+            targetFile.outputStream().use { output ->
+                input.copyTo(output)
+            }
+        }
+
+        withContext(Dispatchers.Main) {
+            onSuccess()
+        }
+    } catch (e: Exception) {
+        withContext(Dispatchers.Main) {
+            onError(e.message ?: "Unknown error")
+        }
+    }
+}
+
+suspend fun convertCustomModel(
+    context: Context,
+    modelName: String,
+    fileUri: Uri,
+    clipSkip: Int,
+    loraFiles: List<LoRAFile>,
+    onProgress: (String) -> Unit,
+    onStart: () -> Unit,
+    onSuccess: () -> Unit,
+    onError: (String) -> Unit
+) = withContext(Dispatchers.IO) {
+    try {
+        withContext(Dispatchers.Main) {
+            onStart()
+            onProgress(context.getString(R.string.preparing_model))
+        }
+
+        val modelId = modelName.replace(" ", "")
+
+        val modelsDir = File(context.filesDir, "models")
+        if (!modelsDir.exists()) {
+            modelsDir.mkdirs()
+        }
+
+        val modelDir = File(modelsDir, modelId)
+        if (modelDir.exists()) {
+            modelDir.deleteRecursively()
+        }
+        modelDir.mkdirs()
+
+        withContext(Dispatchers.Main) {
+            onProgress(context.getString(R.string.copying_model_file))
+        }
+
+        val inputStream = context.contentResolver.openInputStream(fileUri)
+            ?: throw Exception("Cannot open selected file")
+        val modelFile = File(modelDir, "model.safetensors")
+
+        inputStream.use { input ->
+            modelFile.outputStream().use { output ->
+                input.copyTo(output)
+            }
+        }
+
+        withContext(Dispatchers.Main) {
+            onProgress(context.getString(R.string.copying_lora_files))
+        }
+
+        loraFiles.forEachIndexed { index, loraFile ->
+            val loraInputStream = context.contentResolver.openInputStream(loraFile.uri)
+                ?: throw Exception("Cannot open LoRA file ${index + 1}")
+            val loraFileTarget = File(modelDir, "lora.${index + 1}.safetensors")
+            val loraWeightFile = File(modelDir, "lora.${index + 1}.weight")
+
+            loraInputStream.use { input ->
+                loraFileTarget.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+            }
+
+            loraWeightFile.writeText(loraFile.weight.toString())
+        }
+
+        withContext(Dispatchers.Main) {
+            onProgress(context.getString(R.string.copying_base_files))
+        }
+
+        fun copyAssetsRecursively(assetPath: String, targetDir: File) {
+            val assetManager = context.assets
+            val assets = assetManager.list(assetPath) ?: emptyArray()
+
+            if (assets.isEmpty()) {
+                try {
+                    val assetInputStream = assetManager.open(assetPath)
+                    val fileName = assetPath.substringAfterLast("/")
+                    val targetFile = File(targetDir, fileName)
+
+                    assetInputStream.use { input ->
+                        targetFile.outputStream().use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w("ModelConvert", "Could not copy asset: $assetPath", e)
+                }
+            } else {
+                for (asset in assets) {
+                    val subAssetPath = "$assetPath/$asset"
+                    val subAssets = assetManager.list(subAssetPath) ?: emptyArray()
+
+                    if (subAssets.isEmpty()) {
+                        try {
+                            val assetInputStream = assetManager.open(subAssetPath)
+                            val targetFile = File(targetDir, asset)
+
+                            assetInputStream.use { input ->
+                                targetFile.outputStream().use { output ->
+                                    input.copyTo(output)
+                                }
+                            }
+                        } catch (e: Exception) {
+                            Log.w(
+                                "ModelConvert",
+                                "Could not copy file: $subAssetPath",
+                                e
+                            )
+                        }
+                    } else {
+                        val subTargetDir = File(targetDir, asset)
+                        subTargetDir.mkdirs()
+                        copyAssetsRecursively(subAssetPath, subTargetDir)
+                    }
+                }
+            }
+        }
+
+        copyAssetsRecursively("cvtbase", modelDir)
+
+        withContext(Dispatchers.Main) {
+            onProgress(context.getString(R.string.converting_model))
+        }
+
+        val nativeDir = context.applicationInfo.nativeLibraryDir
+        val executableFile = File(nativeDir, "libstable_diffusion_core.so")
+
+        if (!executableFile.exists()) {
+            throw Exception("Executable not found: ${executableFile.absolutePath}")
+        }
+
+        var command = listOf(
+            executableFile.absolutePath,
+            "--convert",
+            modelDir.absolutePath
+        )
+        val clipSourceFile =
+            File(modelDir, if (clipSkip == 2) "clip_skip_2.mnn" else "clip_skip_1.mnn")
+        val clipTargetFile = File(modelDir, "clip_v2.mnn")
+        clipSourceFile.copyTo(clipTargetFile, overwrite = true)
+        if (clipSkip == 2) {
+            command += listOf("--clip_skip_2")
+        }
+        val env = mutableMapOf<String, String>()
+        val systemLibPaths = listOf(
+            nativeDir,
+            "/system/lib64",
+            "/vendor/lib64",
+            "/vendor/lib64/egl"
+        ).joinToString(":")
+
+        env["LD_LIBRARY_PATH"] = systemLibPaths
+        env["DSP_LIBRARY_PATH"] = nativeDir
+
+        val processBuilder = ProcessBuilder(command).apply {
+            directory(File(nativeDir))
+            redirectErrorStream(true)
+            environment().putAll(env)
+        }
+
+        val process = processBuilder.start()
+
+        process.inputStream.bufferedReader().use { reader ->
+            var line: String?
+            while (reader.readLine().also { line = it } != null) {
+                Log.i("ModelConvert", "Convert: $line")
+                withContext(Dispatchers.Main) {
+                    onProgress("Converting: $line")
+                }
+            }
+        }
+
+        val exitCode = process.waitFor()
+        Log.i("ModelConvert", "Conversion process exited with code: $exitCode")
+
+        val finishedFile = File(modelDir, "finished")
+        if (finishedFile.exists()) {
+            modelFile.delete()
+            val clipSkip1File = File(modelDir, "clip_skip_1.mnn")
+            if (clipSkip1File.exists()) {
+                clipSkip1File.delete()
+            }
+            val clipSkip2File = File(modelDir, "clip_skip_2.mnn")
+            if (clipSkip2File.exists()) {
+                clipSkip2File.delete()
+            }
+
+            loraFiles.forEachIndexed { index, _ ->
+                val loraFile = File(modelDir, "lora.${index + 1}.safetensors")
+                val loraWeightFile = File(modelDir, "lora.${index + 1}.weight")
+                if (loraFile.exists()) {
+                    loraFile.delete()
+                }
+                if (loraWeightFile.exists()) {
+                    loraWeightFile.delete()
+                }
+            }
+
+            withContext(Dispatchers.Main) {
+                onSuccess()
+            }
+        } else {
+            modelDir.deleteRecursively()
+            withContext(Dispatchers.Main) {
+                onError("Model conversion failed: Please use SD1.5 safetensors model")
+            }
+        }
+
+    } catch (e: Exception) {
+        Log.e("ModelConvert", "Conversion failed", e)
+
+        val modelId = modelName.replace(" ", "")
+        val modelDir = File(File(context.filesDir, "models"), modelId)
+        if (modelDir.exists()) {
+            modelDir.deleteRecursively()
+        }
+
+        withContext(Dispatchers.Main) {
+            onError("Conversion failed: ${e.message}")
+        }
+    }
+}
+
+private fun getFileNameFromUri(context: Context, uri: Uri): String? {
+    return try {
+        when (uri.scheme) {
+            "content" -> {
+                context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                    val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    if (cursor.moveToFirst() && nameIndex != -1) {
+                        cursor.getString(nameIndex)
+                    } else {
+                        null
+                    }
+                }
+            }
+
+            "file" -> {
+                uri.lastPathSegment
+            }
+
+            else -> {
+                DocumentFile.fromSingleUri(context, uri)?.name
+            }
+        }
+    } catch (e: Exception) {
+        Log.e("GetFileName", "Get file name from uri failed", e)
+        null
+    }
+}
+
+@Composable
+private fun InstalledModelQuickSetupRow(
+    model: Model,
+    onQuickSetup: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = model.name,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = "${model.generationSize}×${model.generationSize}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+            )
+        }
+        FilledTonalButton(
+            onClick = onQuickSetup,
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+        ) {
+            Icon(
+                Icons.Default.Add,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                stringResource(R.string.quick_setup),
+                style = MaterialTheme.typography.labelMedium
+            )
+        }
+    }
+}
+
+@Composable
+private fun OpenAIModelCard(
+    model: io.github.xingguangcuican.localdreamoss.data.OpenAIModel,
+    onClick: () -> Unit,
+    onDeleteClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val elevation by animateFloatAsState(
+        targetValue = 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
+        label = "ApiCardElevationAnimation"
+    )
+
+    val contentColor = MaterialTheme.colorScheme.onSurface
+
+    ElevatedCard(
+        modifier = modifier
+            .fillMaxWidth()
+            .pointerInput(Unit) {
+                detectTapGestures(onTap = { onClick() })
+            },
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLowest
+        ),
+        elevation = CardDefaults.elevatedCardElevation(
+            defaultElevation = elevation.dp
+        ),
+        shape = MaterialTheme.shapes.large
+    ) {
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(8.dp),
+                shape = MaterialTheme.shapes.extraSmall,
+                color = MaterialTheme.colorScheme.secondaryContainer
+            ) {
+                Text(
+                    text = "API",
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+            ) {
+                Text(
+                    text = model.name,
+                    style = MaterialTheme.typography.titleLarge,
+                    color = contentColor
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = model.modelId,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = contentColor.copy(alpha = 0.8f)
+                )
+                if (model.description.isNotEmpty()) {
+                    Text(
+                        text = model.description,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = contentColor.copy(alpha = 0.6f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = model.apiEndpoint,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = contentColor.copy(alpha = 0.5f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(
+                        onClick = onDeleteClick,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Delete,
+                            contentDescription = stringResource(R.string.delete),
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AddApiModelDialog(
+    repository: io.github.xingguangcuican.localdreamoss.data.OpenAIModelRepository,
+    onDismiss: () -> Unit,
+    onAdded: () -> Unit,
+    initialName: String = "",
+    initialModelId: String = "",
+    initialSize: String = "1024x1024",
+    isQuickSetup: Boolean = false,
+    onStartBackendService: (() -> Unit)? = null
+) {
+    val commonSizes = listOf("256x256", "512x512", "768x768", "1024x1024", "1024x1792", "1792x1024")
+    var name by remember(initialName) { mutableStateOf(initialName) }
+    var modelId by remember(initialModelId) { mutableStateOf(initialModelId) }
+    var apiEndpoint by remember { mutableStateOf("") }
+    var apiKey by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf("") }
+    var localApiPort by remember { mutableStateOf("8081") }
+    var localApiKey by remember { mutableStateOf("local") }
+    var selectedSize by remember(initialSize) { mutableStateOf(if (initialSize in commonSizes) initialSize else "1024x1024") }
+    var showError by remember { mutableStateOf(false) }
+
+    var dropdownExpanded by remember { mutableStateOf(false) }
+    var modelDropdownExpanded by remember { mutableStateOf(false) }
+
+    val isFetching = repository.isFetchingModels
+    val remoteModelIds = repository.remoteModelIds
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.add_api_model)) },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                if (isQuickSetup) {
+                    OutlinedTextField(
+                        value = localApiPort,
+                        onValueChange = { text ->
+                            localApiPort = text.filter { char -> char.isDigit() }.take(5)
+                        },
+                        label = { Text(stringResource(R.string.local_api_port)) },
+                        placeholder = { Text(stringResource(R.string.local_api_port_hint)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        isError = showError && localApiPort.toIntOrNull()?.let { it !in 1..65535 } != false
+                    )
+                    OutlinedTextField(
+                        value = localApiKey,
+                        onValueChange = { localApiKey = it },
+                        label = { Text(stringResource(R.string.api_key)) },
+                        placeholder = { Text(stringResource(R.string.api_key_hint)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        isError = showError && localApiKey.isBlank()
+                    )
+                } else {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        label = { Text(stringResource(R.string.api_model_name)) },
+                        placeholder = { Text(stringResource(R.string.api_model_name_hint)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        isError = showError && name.isBlank()
+                    )
+                    OutlinedTextField(
+                        value = apiEndpoint,
+                        onValueChange = { apiEndpoint = it },
+                        label = { Text(stringResource(R.string.api_endpoint)) },
+                        placeholder = { Text(stringResource(R.string.api_endpoint_hint)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        isError = showError && apiEndpoint.isBlank()
+                    )
+                    OutlinedTextField(
+                        value = apiKey,
+                        onValueChange = { apiKey = it },
+                        label = { Text(stringResource(R.string.api_key)) },
+                        placeholder = { Text(stringResource(R.string.api_key_hint)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        isError = showError && apiKey.isBlank()
+                    )
+
+                    // Fetch models button + model ID picker
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        ExposedDropdownMenuBox(
+                            expanded = modelDropdownExpanded,
+                            onExpandedChange = { modelDropdownExpanded = !modelDropdownExpanded },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            OutlinedTextField(
+                                value = modelId,
+                                onValueChange = { modelId = it },
+                                label = { Text(stringResource(R.string.api_model_id)) },
+                                placeholder = { Text(stringResource(R.string.api_model_id_hint)) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .menuAnchor(),
+                                singleLine = true,
+                                isError = showError && modelId.isBlank(),
+                                trailingIcon = {
+                                    if (remoteModelIds.isNotEmpty()) {
+                                        ExposedDropdownMenuDefaults.TrailingIcon(expanded = modelDropdownExpanded)
+                                    }
+                                }
+                            )
+                            if (remoteModelIds.isNotEmpty()) {
+                                ExposedDropdownMenu(
+                                    expanded = modelDropdownExpanded,
+                                    onDismissRequest = { modelDropdownExpanded = false }
+                                ) {
+                                    remoteModelIds.forEach { id ->
+                                        DropdownMenuItem(
+                                            text = { Text(id) },
+                                            onClick = {
+                                                modelId = id
+                                                modelDropdownExpanded = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        FilledTonalIconButton(
+                            onClick = {
+                                if (apiEndpoint.isNotBlank() && apiKey.isNotBlank()) {
+                                    repository.fetchRemoteModels(apiEndpoint, apiKey)
+                                }
+                            },
+                            enabled = !isFetching && apiEndpoint.isNotBlank() && apiKey.isNotBlank()
+                        ) {
+                            if (isFetching) {
+                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                            } else {
+                                Icon(Icons.Default.Refresh, stringResource(R.string.fetch_models))
+                            }
+                        }
+                    }
+
+                    // Size picker
+                    ExposedDropdownMenuBox(
+                        expanded = dropdownExpanded,
+                        onExpandedChange = { dropdownExpanded = !dropdownExpanded }
+                    ) {
+                        OutlinedTextField(
+                            value = selectedSize,
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text(stringResource(R.string.api_model_size)) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .menuAnchor(),
+                            trailingIcon = {
+                                ExposedDropdownMenuDefaults.TrailingIcon(expanded = dropdownExpanded)
+                            }
+                        )
+                        ExposedDropdownMenu(
+                            expanded = dropdownExpanded,
+                            onDismissRequest = { dropdownExpanded = false }
+                        ) {
+                            commonSizes.forEach { size ->
+                                DropdownMenuItem(
+                                    text = { Text(size) },
+                                    onClick = {
+                                        selectedSize = size
+                                        dropdownExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = description,
+                        onValueChange = { description = it },
+                        label = { Text(stringResource(R.string.custom_model_hint)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        maxLines = 2
+                    )
+                }
+
+                if (showError) {
+                    Text(
+                        if (isQuickSetup) stringResource(R.string.local_api_port_required)
+                        else stringResource(R.string.api_model_required_fields),
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    if (isQuickSetup) {
+                        val port = localApiPort.toIntOrNull()
+                        if (port == null || port !in 1..65535 || localApiKey.isBlank()) {
+                            showError = true
+                            return@TextButton
+                        }
+                        val endpoint = "http://127.0.0.1:$port"
+                        val newModel = io.github.xingguangcuican.localdreamoss.data.OpenAIModel(
+                            id = java.util.UUID.randomUUID().toString(),
+                            name = initialName.ifBlank { "Local Dream Local API" },
+                            modelId = initialModelId.ifBlank { "local-dream" },
+                            apiEndpoint = endpoint,
+                            apiKey = localApiKey.trim(),
+                            description = "",
+                            supportedSizes = listOf(selectedSize)
+                        )
+                        repository.addModel(newModel)
+                        onAdded()
+                        onStartBackendService?.invoke()
+                        return@TextButton
+                    }
+                    if (name.isBlank() || modelId.isBlank() || apiEndpoint.isBlank() || apiKey.isBlank()) {
+                        showError = true
+                        return@TextButton
+                    }
+                    val newModel = io.github.xingguangcuican.localdreamoss.data.OpenAIModel(
+                        id = java.util.UUID.randomUUID().toString(),
+                        name = name.trim(),
+                        modelId = modelId.trim(),
+                        apiEndpoint = apiEndpoint.trim().trimEnd('/'),
+                        apiKey = apiKey.trim(),
+                        description = description.trim(),
+                        supportedSizes = listOf(selectedSize)
+                    )
+                    repository.addModel(newModel)
+                    onAdded()
+                }
+            ) { Text(stringResource(R.string.add_model)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        }
+    )
+}

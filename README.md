@@ -1,6 +1,6 @@
 <div align="center">
 
-# Local Dream <img src="./assets/icon.png" width="32" alt="Local Dream">
+# Local Dream OSS <img src="./assets/icon.png" width="32" alt="Local Dream">
 
 **Android Stable Diffusion with Snapdragon NPU acceleration**  
 _Also supports CPU/GPU inference_
@@ -11,9 +11,45 @@ _Also supports CPU/GPU inference_
 
 ## About this Repo
 
-This project is **now open sourced and completely free**. Hope you enjoy it!
+This is the **open-source version** of [Local Dream](https://github.com/xororz/local-dream) — an Android app for on-device Stable Diffusion image generation. The OSS version is **completely free** and adds developer-oriented features on top of the original app.
 
-If you like it, please consider [sponsor](https://github.com/xororz/local-dream?tab=readme-ov-file#-support-this-project) this project.
+Source repository: **[xororz/local-dream](https://github.com/xororz/local-dream)**
+
+If you like it, please consider [sponsoring](https://github.com/xororz/local-dream?tab=readme-ov-file#-support-this-project) the original project.
+
+## 🆕 OSS-Exclusive Features
+
+### 🔌 OpenAI-Compatible Local API Server
+
+The OSS version embeds a lightweight HTTP server that exposes the on-device inference engine as an **OpenAI-compatible image generation API**, letting other apps and tools use your phone as a local AI backend.
+
+**Endpoints:**
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/v1/models` | List available model IDs |
+| `POST` | `/v1/images/generations` | Generate images (OpenAI format) |
+
+**Highlights:**
+- Bearer token authentication (`Authorization: Bearer <API_KEY>`)
+- Returns images as Base64-encoded JSON (`b64_json`)
+- Configurable port (default: **8081**) and API key (default: `local`)
+- CORS enabled for browser/cross-origin clients
+
+### 📡 API Models Tab
+
+A dedicated **API Models** tab in the model list lets you:
+- Add any OpenAI-compatible remote or local API endpoint
+- Configure custom base URLs, API keys, and model IDs
+- Auto-fetch available models from any `/v1/models` endpoint
+- One-click **Quick Setup** to wire the local server to the in-app model selector
+
+### ⚙️ Local API Settings
+
+Toggle and configure the built-in server directly from the app:
+- **Enable / disable** the local API server
+- Set the **listening port**
+- Set the **API key**
 
 > [!NOTE]
 > Currently focus on SD1.5 models. SD2.1 models are no longer maintained due to poor quality and not popular. SDXL/Flux models are too large for most devices. So will not support them for now.
@@ -117,6 +153,65 @@ bash ./build.sh
 
 Open this project in Android Studio and navigate to:
 **Build → Generate App Bundles or APKs → Generate APKs**
+
+## 🔑 CI / Release Signing Setup
+
+The CI pipeline signs release APKs automatically. Before pushing to `main` / `master` / `dev`, you must add four repository secrets; otherwise the **"Validate release signing secrets"** step will fail with:
+
+```
+Missing secret: ANDROID_RELEASE_KEYSTORE_BASE64
+Error: Process completed with exit code 1.
+```
+
+### Step 1 – Create an Android signing keystore
+
+Run the following command on your local machine (requires JDK):
+
+```bash
+keytool -genkeypair \
+  -keystore release-signing.jks \
+  -alias my-key-alias \
+  -keyalg RSA \
+  -keysize 2048 \
+  -validity 10000 \
+  -storepass YOUR_STORE_PASSWORD \
+  -keypass YOUR_KEY_PASSWORD \
+  -dname "CN=Your Name, OU=Your Org, O=Your Company, L=City, ST=State, C=US"
+```
+
+> Keep `release-signing.jks` somewhere safe. **Never commit it to the repository.**
+
+### Step 2 – Encode the keystore to Base64
+
+**Linux / macOS:**
+
+```bash
+base64 -w 0 release-signing.jks
+```
+
+**Windows (PowerShell):**
+
+```powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("release-signing.jks"))
+```
+
+Copy the entire output string — you will need it in the next step.
+
+### Step 3 – Add secrets to your GitHub repository
+
+Go to your repository on GitHub:  
+**Settings → Secrets and variables → Actions → New repository secret**
+
+Add all four secrets:
+
+| Secret name | Value |
+|---|---|
+| `ANDROID_RELEASE_KEYSTORE_BASE64` | The Base64 string from Step 2 |
+| `ANDROID_RELEASE_STORE_PASSWORD` | The `-storepass` value you chose |
+| `ANDROID_RELEASE_KEY_ALIAS` | The `-alias` value you chose (e.g. `my-key-alias`) |
+| `ANDROID_RELEASE_KEY_PASSWORD` | The `-keypass` value you chose |
+
+Once all four secrets are in place, push again — the CI will decode the keystore, sign the APK, and create a GitHub Release automatically.
 
 ## Technical Implementation
 
