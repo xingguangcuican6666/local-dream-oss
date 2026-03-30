@@ -33,6 +33,7 @@ class OpenAIGenerationService : Service() {
     companion object {
         private const val CHANNEL_ID = "openai_generation_channel"
         private const val NOTIFICATION_ID = 2
+        private const val MAX_BASE64_IMAGE_CHARS = 12 * 1024 * 1024
 
         const val EXTRA_PROMPT = "prompt"
         const val EXTRA_API_ENDPOINT = "api_endpoint"
@@ -181,6 +182,9 @@ class OpenAIGenerationService : Service() {
                     val item = data.optJSONObject(i) ?: continue
                     val b64 = item.optString("b64_json")
                     if (b64.isNotEmpty()) {
+                        if (b64.length > MAX_BASE64_IMAGE_CHARS) {
+                            throw IOException(getString(R.string.error_request_failed, "image payload too large"))
+                        }
                         val bytes = Base64.getDecoder().decode(b64)
                         val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
                         if (bmp != null) bitmaps.add(bmp)

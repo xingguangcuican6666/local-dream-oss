@@ -748,7 +748,7 @@ fun ModelListScreen(
                                     model = model,
                                     onQuickSetup = {
                                         apiModelPrefillName = model.name
-                                        apiModelPrefillModelId = model.id
+                                        apiModelPrefillModelId = ""
                                         val sz = model.generationSize
                                         apiModelPrefillSize = "${sz}x${sz}"
                                         showAddApiModelDialog = true
