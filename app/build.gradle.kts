@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "io.github.xororz.localdream"
+    namespace = "io.github.xingguangcuican.localdreamoss"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "io.github.xororz.localdream"
+        applicationId = "io.github.xingguangcuican.localdreamoss"
         minSdk = 28
 //        minSdk = 31
         targetSdk = 36
