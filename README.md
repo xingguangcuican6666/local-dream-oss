@@ -154,6 +154,65 @@ bash ./build.sh
 Open this project in Android Studio and navigate to:
 **Build → Generate App Bundles or APKs → Generate APKs**
 
+## 🔑 CI / Release Signing Setup
+
+The CI pipeline signs release APKs automatically. Before pushing to `main` / `master` / `dev`, you must add four repository secrets; otherwise the **"Validate release signing secrets"** step will fail with:
+
+```
+Missing secret: ANDROID_RELEASE_KEYSTORE_BASE64
+Error: Process completed with exit code 1.
+```
+
+### Step 1 – Create an Android signing keystore
+
+Run the following command on your local machine (requires JDK):
+
+```bash
+keytool -genkeypair \
+  -keystore release-signing.jks \
+  -alias my-key-alias \
+  -keyalg RSA \
+  -keysize 2048 \
+  -validity 10000 \
+  -storepass YOUR_STORE_PASSWORD \
+  -keypass YOUR_KEY_PASSWORD \
+  -dname "CN=Your Name, OU=Your Org, O=Your Company, L=City, ST=State, C=US"
+```
+
+> Keep `release-signing.jks` somewhere safe. **Never commit it to the repository.**
+
+### Step 2 – Encode the keystore to Base64
+
+**Linux / macOS:**
+
+```bash
+base64 -w 0 release-signing.jks
+```
+
+**Windows (PowerShell):**
+
+```powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("release-signing.jks"))
+```
+
+Copy the entire output string — you will need it in the next step.
+
+### Step 3 – Add secrets to your GitHub repository
+
+Go to your repository on GitHub:  
+**Settings → Secrets and variables → Actions → New repository secret**
+
+Add all four secrets:
+
+| Secret name | Value |
+|---|---|
+| `ANDROID_RELEASE_KEYSTORE_BASE64` | The Base64 string from Step 2 |
+| `ANDROID_RELEASE_STORE_PASSWORD` | The `-storepass` value you chose |
+| `ANDROID_RELEASE_KEY_ALIAS` | The `-alias` value you chose (e.g. `my-key-alias`) |
+| `ANDROID_RELEASE_KEY_PASSWORD` | The `-keypass` value you chose |
+
+Once all four secrets are in place, push again — the CI will decode the keystore, sign the APK, and create a GitHub Release automatically.
+
 ## Technical Implementation
 
 ### NPU Acceleration
