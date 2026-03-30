@@ -72,6 +72,10 @@ import java.util.zip.ZipInputStream
 import java.io.BufferedOutputStream
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.core.net.toUri
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 
 data class LoRAFile(
     val uri: Uri,
@@ -143,6 +147,8 @@ fun ModelListScreen(
     var showEmbeddingManagerDialog by remember { mutableStateOf(false) }
     var showCustomModelDialog by remember { mutableStateOf(false) }
     var showCustomNpuModelDialog by remember { mutableStateOf(false) }
+    var showAddApiModelDialog by remember { mutableStateOf(false) }
+    var showDeleteApiModelConfirm by remember { mutableStateOf<io.github.xororz.localdream.data.OpenAIModel?>(null) }
     var isConverting by remember { mutableStateOf(false) }
     var conversionProgress by remember { mutableStateOf("") }
     var tempBaseUrl by remember { mutableStateOf("") }
@@ -152,6 +158,7 @@ fun ModelListScreen(
 
     var version by remember { mutableStateOf(0) }
     val modelRepository = remember(version) { ModelRepository(context) }
+    val openAIRepository = remember { io.github.xororz.localdream.data.OpenAIModelRepository(context) }
 
     var showHelpDialog by remember { mutableStateOf(false) }
 
@@ -234,7 +241,7 @@ fun ModelListScreen(
 
     val pagerState = rememberPagerState(
         initialPage = lastViewedPage,
-        pageCount = { 2 }
+        pageCount = { 3 }
     )
 
     LaunchedEffect(pagerState.currentPage) {
@@ -244,7 +251,8 @@ fun ModelListScreen(
 
     val tabTitles = listOf(
         stringResource(R.string.cpu_models),
-        stringResource(R.string.npu_models)
+        stringResource(R.string.npu_models),
+        stringResource(R.string.api_models)
     )
 
     BackHandler(enabled = isSelectionMode || showSettingsDialog) {
@@ -555,6 +563,45 @@ fun ModelListScreen(
         )
     }
 
+    // Delete API model confirm dialog
+    showDeleteApiModelConfirm?.let { apiModel ->
+        AlertDialog(
+            onDismissRequest = { showDeleteApiModelConfirm = null },
+            title = { Text(stringResource(R.string.delete_api_model)) },
+            text = { Text(stringResource(R.string.delete_api_model_confirm, apiModel.name)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        openAIRepository.removeModel(apiModel.id)
+                        showDeleteApiModelConfirm = null
+                    },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
+                ) { Text(stringResource(R.string.delete)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteApiModelConfirm = null }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
+    }
+
+    // Add API model dialog
+    if (showAddApiModelDialog) {
+        AddApiModelDialog(
+            repository = openAIRepository,
+            onDismiss = { showAddApiModelDialog = false },
+            onAdded = {
+                showAddApiModelDialog = false
+                scope.launch {
+                    snackbarHostState.showSnackbar(context.getString(R.string.api_model_added))
+                }
+            }
+        )
+    }
+
     Scaffold(
         topBar = {
             LargeTopAppBar(
@@ -643,6 +690,75 @@ fun ModelListScreen(
                 state = pagerState,
                 modifier = Modifier.weight(1f)
             ) { page ->
+                if (page == 2) {
+                    // API Models tab
+                    val apiModels = openAIRepository.models
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(
+                            top = 8.dp,
+                            start = 16.dp,
+                            end = 16.dp,
+                            bottom = 16.dp
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        item {
+                            OutlinedButton(
+                                onClick = { showAddApiModelDialog = true },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(
+                                    Icons.Default.Add,
+                                    contentDescription = null,
+                                    modifier = Modifier.padding(end = 8.dp)
+                                )
+                                Text(stringResource(R.string.add_api_model))
+                            }
+                        }
+                        items(apiModels, key = { it.id }) { apiModel ->
+                            OpenAIModelCard(
+                                model = apiModel,
+                                onClick = {
+                                    navController.navigate(
+                                        io.github.xororz.localdream.navigation.Screen.OpenAIModelRun.createRoute(apiModel.id)
+                                    )
+                                },
+                                onDeleteClick = { showDeleteApiModelConfirm = apiModel }
+                            )
+                        }
+                        if (apiModels.isEmpty()) {
+                            item {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 32.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Cloud,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(48.dp),
+                                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                                    )
+                                    Text(
+                                        stringResource(R.string.no_api_models),
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        textAlign = TextAlign.Center,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                    )
+                                    Text(
+                                        stringResource(R.string.no_api_models_hint),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        textAlign = TextAlign.Center,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } else {
                 val models = if (page == 0) cpuModels else npuModels
 
                 LazyColumn(
@@ -763,6 +879,7 @@ fun ModelListScreen(
                         }
                     }
                 }
+                } // end else
             }
 
             Row(
@@ -772,7 +889,7 @@ fun ModelListScreen(
                 horizontalArrangement = Arrangement.Center
             ) {
                 TabPageIndicator(
-                    pageCount = 2,
+                    pageCount = 3,
                     currentPage = pagerState.currentPage,
                     modifier = Modifier.padding(bottom = 8.dp)
                 )
@@ -2911,4 +3028,291 @@ private fun getFileNameFromUri(context: Context, uri: Uri): String? {
         Log.e("GetFileName", "Get file name from uri failed", e)
         null
     }
+}
+
+@Composable
+private fun OpenAIModelCard(
+    model: io.github.xororz.localdream.data.OpenAIModel,
+    onClick: () -> Unit,
+    onDeleteClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    ElevatedCard(
+        modifier = modifier
+            .fillMaxWidth()
+            .pointerInput(Unit) {
+                detectTapGestures(onTap = { onClick() })
+            },
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLowest
+        ),
+        shape = MaterialTheme.shapes.large
+    ) {
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(8.dp),
+                shape = MaterialTheme.shapes.extraSmall,
+                color = MaterialTheme.colorScheme.secondaryContainer
+            ) {
+                Text(
+                    text = "API",
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+            ) {
+                Text(
+                    text = model.name,
+                    style = MaterialTheme.typography.titleLarge
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = model.modelId,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                )
+                if (model.description.isNotEmpty()) {
+                    Text(
+                        text = model.description,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = model.apiEndpoint,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(
+                        onClick = onDeleteClick,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Delete,
+                            contentDescription = stringResource(R.string.delete),
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AddApiModelDialog(
+    repository: io.github.xororz.localdream.data.OpenAIModelRepository,
+    onDismiss: () -> Unit,
+    onAdded: () -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    var modelId by remember { mutableStateOf("") }
+    var apiEndpoint by remember { mutableStateOf("") }
+    var apiKey by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf("") }
+    var selectedSize by remember { mutableStateOf("1024x1024") }
+    var showError by remember { mutableStateOf(false) }
+
+    val commonSizes = listOf("256x256", "512x512", "768x768", "1024x1024", "1024x1792", "1792x1024")
+    var dropdownExpanded by remember { mutableStateOf(false) }
+    var modelDropdownExpanded by remember { mutableStateOf(false) }
+
+    val isFetching = repository.isFetchingModels
+    val remoteModelIds = repository.remoteModelIds
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.add_api_model)) },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text(stringResource(R.string.api_model_name)) },
+                    placeholder = { Text(stringResource(R.string.api_model_name_hint)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    isError = showError && name.isBlank()
+                )
+                OutlinedTextField(
+                    value = apiEndpoint,
+                    onValueChange = { apiEndpoint = it },
+                    label = { Text(stringResource(R.string.api_endpoint)) },
+                    placeholder = { Text(stringResource(R.string.api_endpoint_hint)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    isError = showError && apiEndpoint.isBlank()
+                )
+                OutlinedTextField(
+                    value = apiKey,
+                    onValueChange = { apiKey = it },
+                    label = { Text(stringResource(R.string.api_key)) },
+                    placeholder = { Text(stringResource(R.string.api_key_hint)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    isError = showError && apiKey.isBlank()
+                )
+
+                // Fetch models button + model ID picker
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    ExposedDropdownMenuBox(
+                        expanded = modelDropdownExpanded,
+                        onExpandedChange = { modelDropdownExpanded = !modelDropdownExpanded },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        OutlinedTextField(
+                            value = modelId,
+                            onValueChange = { modelId = it },
+                            label = { Text(stringResource(R.string.api_model_id)) },
+                            placeholder = { Text(stringResource(R.string.api_model_id_hint)) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .menuAnchor(),
+                            singleLine = true,
+                            isError = showError && modelId.isBlank(),
+                            trailingIcon = {
+                                if (remoteModelIds.isNotEmpty()) {
+                                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = modelDropdownExpanded)
+                                }
+                            }
+                        )
+                        if (remoteModelIds.isNotEmpty()) {
+                            ExposedDropdownMenu(
+                                expanded = modelDropdownExpanded,
+                                onDismissRequest = { modelDropdownExpanded = false }
+                            ) {
+                                remoteModelIds.forEach { id ->
+                                    DropdownMenuItem(
+                                        text = { Text(id) },
+                                        onClick = {
+                                            modelId = id
+                                            modelDropdownExpanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    FilledTonalIconButton(
+                        onClick = {
+                            if (apiEndpoint.isNotBlank() && apiKey.isNotBlank()) {
+                                repository.fetchRemoteModels(apiEndpoint, apiKey)
+                            }
+                        },
+                        enabled = !isFetching && apiEndpoint.isNotBlank() && apiKey.isNotBlank()
+                    ) {
+                        if (isFetching) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        } else {
+                            Icon(Icons.Default.Refresh, stringResource(R.string.fetch_models))
+                        }
+                    }
+                }
+
+                // Size picker
+                ExposedDropdownMenuBox(
+                    expanded = dropdownExpanded,
+                    onExpandedChange = { dropdownExpanded = !dropdownExpanded }
+                ) {
+                    OutlinedTextField(
+                        value = selectedSize,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text(stringResource(R.string.api_model_size)) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .menuAnchor(),
+                        trailingIcon = {
+                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = dropdownExpanded)
+                        }
+                    )
+                    ExposedDropdownMenu(
+                        expanded = dropdownExpanded,
+                        onDismissRequest = { dropdownExpanded = false }
+                    ) {
+                        commonSizes.forEach { size ->
+                            DropdownMenuItem(
+                                text = { Text(size) },
+                                onClick = {
+                                    selectedSize = size
+                                    dropdownExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    label = { Text(stringResource(R.string.custom_model_hint)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    maxLines = 2
+                )
+
+                if (showError) {
+                    Text(
+                        stringResource(R.string.api_model_required_fields),
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    if (name.isBlank() || modelId.isBlank() || apiEndpoint.isBlank() || apiKey.isBlank()) {
+                        showError = true
+                        return@TextButton
+                    }
+                    val newModel = io.github.xororz.localdream.data.OpenAIModel(
+                        id = java.util.UUID.randomUUID().toString(),
+                        name = name.trim(),
+                        modelId = modelId.trim(),
+                        apiEndpoint = apiEndpoint.trim().trimEnd('/'),
+                        apiKey = apiKey.trim(),
+                        description = description.trim(),
+                        supportedSizes = listOf(selectedSize)
+                    )
+                    repository.addModel(newModel)
+                    onAdded()
+                }
+            ) { Text(stringResource(R.string.add_model)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        }
+    )
 }

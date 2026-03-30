@@ -249,4 +249,35 @@
     <string name="resolution">Resolution</string>
     <string name="scheduler">Scheduler</string>
     <string name="extracting">Extracting…</string>
+
+    <!-- OpenAI-compatible API Models -->
+    <string name="api_models">API Models</string>
+    <string name="add_api_model">Add API Model</string>
+    <string name="api_model_name">Model Name</string>
+    <string name="api_model_name_hint">Display name (e.g. My DALL-E)</string>
+    <string name="api_model_id">Model ID</string>
+    <string name="api_model_id_hint">Model identifier (e.g. dall-e-3)</string>
+    <string name="api_endpoint">API Endpoint</string>
+    <string name="api_endpoint_hint">Base URL (e.g. https://api.openai.com)</string>
+    <string name="api_key">API Key</string>
+    <string name="api_key_hint">Your API key (stored locally)</string>
+    <string name="api_model_size">Image Size</string>
+    <string name="fetch_models">Fetch Models</string>
+    <string name="fetch_models_hint">Fetch available model IDs from the endpoint</string>
+    <string name="no_api_models">No API models configured</string>
+    <string name="no_api_models_hint">Tap + to add an OpenAI-compatible API model</string>
+    <string name="delete_api_model">Delete API Model</string>
+    <string name="delete_api_model_confirm">Remove API model "%s"? This does not delete any remote data.</string>
+    <string name="openai_generating_notify">Generating via API…</string>
+    <string name="openai_run_title">API Image Generation</string>
+    <string name="api_model_size_label">Size: %s</string>
+    <string name="api_generate">Generate</string>
+    <string name="api_generating">Generating…</string>
+    <string name="api_model_description">OpenAI-compatible API</string>
+    <string name="n_images">Images: %d</string>
+    <string name="api_model_required_fields">Name, Model ID, endpoint and API key are required</string>
+    <string name="fetching_models">Fetching models…</string>
+    <string name="select_model_id">Select or enter model ID</string>
+    <string name="api_model_added">API model added successfully</string>
+    <string name="prompt_empty_hint">Please enter a prompt</string>
 </resources>

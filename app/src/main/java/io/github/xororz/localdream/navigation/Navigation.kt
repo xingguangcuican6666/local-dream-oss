@@ -7,4 +7,8 @@ sealed class Screen(val route: String) {
     }
 
     object Upscale : Screen("upscale")
+
+    object OpenAIModelRun : Screen("openai_model_run/{modelId}") {
+        fun createRoute(modelId: String) = "openai_model_run/$modelId"
+    }
 }

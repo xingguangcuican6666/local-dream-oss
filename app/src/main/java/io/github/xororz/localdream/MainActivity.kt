@@ -20,6 +20,7 @@ import androidx.navigation.navArgument
 import io.github.xororz.localdream.navigation.Screen
 import io.github.xororz.localdream.ui.screens.ModelListScreen
 import io.github.xororz.localdream.ui.screens.ModelRunScreen
+import io.github.xororz.localdream.ui.screens.OpenAIModelRunScreen
 import io.github.xororz.localdream.ui.screens.UpscaleScreen
 import io.github.xororz.localdream.ui.theme.LocalDreamTheme
 import androidx.core.content.ContextCompat
@@ -142,6 +143,21 @@ class MainActivity : ComponentActivity() {
                         }
                         composable(Screen.Upscale.route) {
                             UpscaleScreen(navController)
+                        }
+                        composable(
+                            route = Screen.OpenAIModelRun.route,
+                            arguments = listOf(
+                                navArgument("modelId") {
+                                    type = NavType.StringType
+                                }
+                            )
+                        ) { backStackEntry ->
+                            val modelId =
+                                backStackEntry.arguments?.getString("modelId") ?: ""
+                            OpenAIModelRunScreen(
+                                modelId = modelId,
+                                navController = navController
+                            )
                         }
                     }
                 }

@@ -219,4 +219,35 @@
     <string name="resolution">解像度</string>
     <string name="scheduler">スケジューラー</string>
     <string name="extracting">抽出中…</string>
+
+    <!-- OpenAI-compatible API Models -->
+    <string name="api_models">APIモデル</string>
+    <string name="add_api_model">APIモデルを追加</string>
+    <string name="api_model_name">モデル名</string>
+    <string name="api_model_name_hint">表示名（例: 私のDALL-E）</string>
+    <string name="api_model_id">モデルID</string>
+    <string name="api_model_id_hint">モデル識別子（例: dall-e-3）</string>
+    <string name="api_endpoint">APIエンドポイント</string>
+    <string name="api_endpoint_hint">ベースURL（例: https://api.openai.com）</string>
+    <string name="api_key">APIキー</string>
+    <string name="api_key_hint">APIキー（ローカルに保存）</string>
+    <string name="api_model_size">画像サイズ</string>
+    <string name="fetch_models">モデルを取得</string>
+    <string name="fetch_models_hint">エンドポイントから利用可能なモデルIDを取得</string>
+    <string name="no_api_models">APIモデルが設定されていません</string>
+    <string name="no_api_models_hint">+ をタップしてOpenAI互換のAPIモデルを追加</string>
+    <string name="delete_api_model">APIモデルを削除</string>
+    <string name="delete_api_model_confirm">APIモデル "%s" を削除しますか？リモートデータは削除されません。</string>
+    <string name="openai_generating_notify">API経由で生成中…</string>
+    <string name="openai_run_title">API画像生成</string>
+    <string name="api_model_size_label">サイズ：%s</string>
+    <string name="api_generate">生成</string>
+    <string name="api_generating">生成中…</string>
+    <string name="api_model_description">OpenAI互換API</string>
+    <string name="n_images">画像数：%d</string>
+    <string name="api_model_required_fields">名前、モデルID、エンドポイント、APIキーは必須です</string>
+    <string name="fetching_models">モデルを取得中…</string>
+    <string name="select_model_id">モデルIDを選択または入力</string>
+    <string name="api_model_added">APIモデルが正常に追加されました</string>
+    <string name="prompt_empty_hint">プロンプトを入力してください</string>
 </resources>
