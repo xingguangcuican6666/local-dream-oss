@@ -10,7 +10,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
 
     steps:
       - name: Checkout repository
@@ -118,14 +118,83 @@ jobs:
           test -f app/src/main/assets/qnnlibs/libQnnSystem.so
 
       - name: Build debug APK
+        if: github.event_name == 'pull_request'
         run: ./gradlew assembleDebug --no-daemon
 
       - name: Run unit tests
+        if: github.event_name == 'pull_request'
         run: ./gradlew testBasicDebugUnitTest --no-daemon
 
       - name: Upload debug APK
+        if: github.event_name == 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: debug-apk
           path: app/build/outputs/apk/**/debug/*.apk
           if-no-files-found: warn
+
+      - name: Validate release signing secrets
+        if: github.event_name != 'pull_request'
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          [ -n "${KEYSTORE_BASE64}" ] || { echo "Missing secret: ANDROID_RELEASE_KEYSTORE_BASE64"; exit 1; }
+          [ -n "${STORE_PASSWORD}" ] || { echo "Missing secret: ANDROID_RELEASE_STORE_PASSWORD"; exit 1; }
+          [ -n "${KEY_ALIAS}" ] || { echo "Missing secret: ANDROID_RELEASE_KEY_ALIAS"; exit 1; }
+          [ -n "${KEY_PASSWORD}" ] || { echo "Missing secret: ANDROID_RELEASE_KEY_PASSWORD"; exit 1; }
+
+      - name: Prepare signing config
+        if: github.event_name != 'pull_request'
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYSTORE_PATH="${RUNNER_TEMP}/release-signing.jks"
+          echo "${KEYSTORE_BASE64}" | base64 -d > "${KEYSTORE_PATH}"
+          {
+            echo "RELEASE_STORE_FILE=${KEYSTORE_PATH}"
+            echo "RELEASE_STORE_PASSWORD=${STORE_PASSWORD}"
+            echo "RELEASE_KEY_ALIAS=${KEY_ALIAS}"
+            echo "RELEASE_KEY_PASSWORD=${KEY_PASSWORD}"
+          } >> "${HOME}/.gradle/gradle.properties"
+
+      - name: Build release APK
+        if: github.event_name != 'pull_request'
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Upload release APK artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-apk
+          path: app/build/outputs/apk/**/release/*.apk
+          if-no-files-found: error
+
+      - name: Prepare release metadata
+        if: github.event_name != 'pull_request'
+        id: release_meta
+        run: |
+          set -euo pipefail
+          VERSION_NAME="$(grep -E 'versionName = ' app/build.gradle.kts | head -n1 | sed -E 's/.*"([^"]+)".*/\1/')"
+          TAG_NAME="v${VERSION_NAME}-${GITHUB_RUN_NUMBER}"
+          RELEASE_NAME="Local Dream ${VERSION_NAME} (${GITHUB_RUN_NUMBER})"
+          echo "tag=${TAG_NAME}" >> "${GITHUB_OUTPUT}"
+          echo "name=${RELEASE_NAME}" >> "${GITHUB_OUTPUT}"
+
+      - name: Create GitHub Release and upload APK
+        if: github.event_name != 'pull_request'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release_meta.outputs.tag }}
+          name: ${{ steps.release_meta.outputs.name }}
+          target_commitish: ${{ github.sha }}
+          generate_release_notes: true
+          files: |
+            app/build/outputs/apk/**/release/*.apk
