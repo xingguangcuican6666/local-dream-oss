@@ -11,13 +11,21 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import io.github.xingguangcuican.localdreamoss.navigation.Screen
+import io.github.xingguangcuican.localdreamoss.ui.theme.DefaultThemePrimaryArgb
 import io.github.xingguangcuican.localdreamoss.ui.screens.ModelListScreen
 import io.github.xingguangcuican.localdreamoss.ui.screens.ModelRunScreen
 import io.github.xingguangcuican.localdreamoss.ui.screens.OpenAIModelRunScreen
@@ -113,7 +121,33 @@ class MainActivity : ComponentActivity() {
         checkNotificationPermission()
 
         setContent {
-            LocalDreamTheme {
+            val prefs = remember { getSharedPreferences("app_prefs", MODE_PRIVATE) }
+            var dynamicColorEnabled by remember {
+                mutableStateOf(prefs.getBoolean("theme_dynamic_color", true))
+            }
+            var themePrimaryColor by remember {
+                mutableIntStateOf(prefs.getInt("theme_primary_color", DefaultThemePrimaryArgb))
+            }
+            DisposableEffect(prefs) {
+                val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { sp, key ->
+                    when (key) {
+                        "theme_dynamic_color" -> {
+                            dynamicColorEnabled = sp.getBoolean("theme_dynamic_color", true)
+                        }
+
+                        "theme_primary_color" -> {
+                            themePrimaryColor = sp.getInt("theme_primary_color", DefaultThemePrimaryArgb)
+                        }
+                    }
+                }
+                prefs.registerOnSharedPreferenceChangeListener(listener)
+                onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+            }
+
+            LocalDreamTheme(
+                dynamicColor = dynamicColorEnabled,
+                customPrimaryColor = if (dynamicColorEnabled) null else Color(themePrimaryColor)
+            ) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background

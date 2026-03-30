@@ -29,6 +29,9 @@ The OSS version embeds a lightweight HTTP server that exposes the on-device infe
 |--------|------|-------------|
 | `GET` | `/v1/models` | List available model IDs |
 | `POST` | `/v1/images/generations` | Generate images (OpenAI format) |
+| `POST` | `/v1/images/edits` | Image edits / img2img / inpaint (OpenAI format, multipart) |
+| `POST` | `/v1/images/variations` | Image variations (OpenAI format, multipart) |
+| `POST` | `/upscale` | Local Dream custom extension (binary RGB upscale, non-OpenAI-standard) |
 
 **Highlights:**
 - Bearer token authentication (`Authorization: Bearer <API_KEY>`)

@@ -47,6 +47,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.foundation.text.ClickableText
 import androidx.compose.ui.text.style.TextDecoration
 import io.github.xingguangcuican.localdreamoss.R
+import io.github.xingguangcuican.localdreamoss.ui.theme.DefaultThemePrimaryArgb
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -161,6 +162,7 @@ fun ModelListScreen(
     var selectedSource by remember { mutableStateOf("huggingface") }
     val generationPreferences = remember { GenerationPreferences(context) }
     val localApiPrefs = remember { context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE) }
+    val appPrefs = localApiPrefs
     val unifiedLocalApiModelId = "local_api_unified"
     var currentBaseUrl by remember { mutableStateOf("https://huggingface.co/") }
 
@@ -1451,6 +1453,114 @@ fun ModelListScreen(
                             }
                         }
                     }
+
+                    // Theme settings section
+                    item {
+                        Column {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.padding(bottom = 12.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Palette,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Text(
+                                    stringResource(R.string.theme_settings),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                            Text(
+                                stringResource(R.string.theme_settings_hint),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                                modifier = Modifier.padding(bottom = 12.dp)
+                            )
+
+                            var dynamicColorEnabled by remember {
+                                mutableStateOf(appPrefs.getBoolean("theme_dynamic_color", true))
+                            }
+                            var selectedThemeColor by remember {
+                                mutableIntStateOf(
+                                    appPrefs.getInt("theme_primary_color", DefaultThemePrimaryArgb)
+                                )
+                            }
+                            val themeColorOptions = listOf(
+                                DefaultThemePrimaryArgb to stringResource(R.string.theme_color_default),
+                                0xFF006C4C.toInt() to stringResource(R.string.theme_color_emerald),
+                                0xFF0057B8.toInt() to stringResource(R.string.theme_color_ocean),
+                                0xFFB00020.toInt() to stringResource(R.string.theme_color_rose)
+                            )
+
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                                )
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = stringResource(R.string.theme_dynamic_color),
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                            Text(
+                                                text = stringResource(R.string.theme_dynamic_color_hint),
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                                            )
+                                        }
+                                        Switch(
+                                            checked = dynamicColorEnabled,
+                                            onCheckedChange = {
+                                                dynamicColorEnabled = it
+                                                appPrefs.edit { putBoolean("theme_dynamic_color", it) }
+                                            }
+                                        )
+                                    }
+                                    if (!dynamicColorEnabled) {
+                                        HorizontalDivider(
+                                            modifier = Modifier.padding(vertical = 12.dp),
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f)
+                                        )
+                                        Text(
+                                            text = stringResource(R.string.theme_color_select),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Medium,
+                                            modifier = Modifier.padding(bottom = 8.dp)
+                                        )
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            themeColorOptions.forEach { (colorValue, colorLabel) ->
+                                                FilterChip(
+                                                    selected = selectedThemeColor == colorValue,
+                                                    onClick = {
+                                                        selectedThemeColor = colorValue
+                                                        appPrefs.edit {
+                                                            putInt("theme_primary_color", colorValue)
+                                                        }
+                                                    },
+                                                    label = { Text(colorLabel) }
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                     // Embedding management section
                     item {
                         Column {
@@ -1909,6 +2019,7 @@ fun ModelCard(
                             }
                         }
                     }
+
                 }
             }
         }
