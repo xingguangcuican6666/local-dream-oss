@@ -3265,6 +3265,7 @@ private fun AddApiModelDialog(
     var apiKey by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
     var localApiPort by remember { mutableStateOf("8081") }
+    var localApiKey by remember { mutableStateOf("local") }
     var selectedSize by remember(initialSize) { mutableStateOf(if (initialSize in commonSizes) initialSize else "1024x1024") }
     var showError by remember { mutableStateOf(false) }
 
@@ -3296,6 +3297,15 @@ private fun AddApiModelDialog(
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         isError = showError && localApiPort.toIntOrNull()?.let { it !in 1..65535 } != false
+                    )
+                    OutlinedTextField(
+                        value = localApiKey,
+                        onValueChange = { localApiKey = it },
+                        label = { Text(stringResource(R.string.api_key)) },
+                        placeholder = { Text(stringResource(R.string.api_key_hint)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        isError = showError && localApiKey.isBlank()
                     )
                 } else {
                     OutlinedTextField(
@@ -3443,17 +3453,17 @@ private fun AddApiModelDialog(
                 onClick = {
                     if (isQuickSetup) {
                         val port = localApiPort.toIntOrNull()
-                        if (port == null || port !in 1..65535) {
+                        if (port == null || port !in 1..65535 || localApiKey.isBlank()) {
                             showError = true
                             return@TextButton
                         }
                         val endpoint = "http://127.0.0.1:$port"
                         val newModel = io.github.xororz.localdream.data.OpenAIModel(
                             id = java.util.UUID.randomUUID().toString(),
-                            name = initialName.ifBlank { "Local Dream API" },
+                            name = initialName.ifBlank { "Local Dream Local API" },
                             modelId = initialModelId.ifBlank { "local-dream" },
                             apiEndpoint = endpoint,
-                            apiKey = "local",
+                            apiKey = localApiKey.trim(),
                             description = "",
                             supportedSizes = listOf(selectedSize)
                         )

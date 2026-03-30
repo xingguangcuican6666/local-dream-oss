@@ -240,6 +240,7 @@ class BackendService : Service() {
                 "--backend", File(runtimeDir, "libQnnHtp.so").absolutePath,
                 "--system_library", File(runtimeDir, "libQnnSystem.so").absolutePath,
                 "--port", "8081",
+                "--model_id", model.id,
                 "--text_embedding_size", model.textEmbeddingSize.toString()
             )
             if (width != 512 || height != 512) {
