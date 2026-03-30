@@ -255,4 +255,10 @@
     <string name="local_api_port">ローカル API ポート</string>
     <string name="local_api_port_hint">ポート（デフォルト: 8081）</string>
     <string name="local_api_port_required">有効なポート番号（1-65535）を入力してください</string>
+    <string name="local_api_settings">ローカル API 設定</string>
+    <string name="local_api_settings_hint">クイック設定用にローカル OpenAI 互換 API を一元設定します。</string>
+    <string name="enable_local_api_model">ローカル API クイック設定を有効化</string>
+    <string name="enable_local_api_model_hint">無効にすると、インストール済みモデルのクイック設定は使えません。</string>
+    <string name="local_api_disabled_hint">ローカル API クイック設定は無効です。設定で有効化してください。</string>
+    <string name="local_api_quick_setup_done">ローカル API を設定し、バックエンドを再起動しました。</string>
 </resources>

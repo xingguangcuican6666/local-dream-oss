@@ -160,6 +160,8 @@ fun ModelListScreen(
     var tempBaseUrl by remember { mutableStateOf("") }
     var selectedSource by remember { mutableStateOf("huggingface") }
     val generationPreferences = remember { GenerationPreferences(context) }
+    val localApiPrefs = remember { context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE) }
+    val unifiedLocalApiModelId = "local_api_unified"
     var currentBaseUrl by remember { mutableStateOf("https://huggingface.co/") }
 
     var version by remember { mutableStateOf(0) }
@@ -768,13 +770,57 @@ fun ModelListScreen(
                                 InstalledModelQuickSetupRow(
                                     model = model,
                                     onQuickSetup = {
-                                        apiModelPrefillName = model.name
-                                        apiModelPrefillModelId = model.id
+                                        val localApiEnabled =
+                                            localApiPrefs.getBoolean("local_api_enabled", true)
+                                        if (!localApiEnabled) {
+                                            scope.launch {
+                                                snackbarHostState.showSnackbar(
+                                                    context.getString(R.string.local_api_disabled_hint)
+                                                )
+                                            }
+                                            return@InstalledModelQuickSetupRow
+                                        }
+
+                                        val port =
+                                            localApiPrefs.getInt("local_api_port", 8081)
+                                                .coerceIn(1, 65535)
+                                        val localApiKey =
+                                            localApiPrefs.getString("local_api_key", "local")
+                                                .orEmpty()
+                                                .ifBlank { "local" }
+                                        val endpoint = "http://127.0.0.1:$port"
                                         val sz = model.generationSize
-                                        apiModelPrefillSize = "${sz}x${sz}"
+
+                                        val unifiedModel = io.github.xororz.localdream.data.OpenAIModel(
+                                            id = unifiedLocalApiModelId,
+                                            name = "Local Dream Local API",
+                                            modelId = model.id,
+                                            apiEndpoint = endpoint,
+                                            apiKey = localApiKey,
+                                            description = "",
+                                            supportedSizes = listOf("${sz}x${sz}")
+                                        )
+                                        if (openAIRepository.models.any { it.id == unifiedLocalApiModelId }) {
+                                            openAIRepository.updateModel(unifiedModel)
+                                        } else {
+                                            openAIRepository.addModel(unifiedModel)
+                                        }
+
                                         quickSetupBackendModelId = model.id
                                         quickSetupResolution = sz
-                                        showAddApiModelDialog = true
+                                        val size = quickSetupResolution.coerceAtLeast(128)
+                                        val intent = Intent(context, BackendService::class.java).apply {
+                                            action = BackendService.ACTION_RESTART
+                                            putExtra("modelId", model.id)
+                                            putExtra("width", size)
+                                            putExtra("height", size)
+                                        }
+                                        context.startForegroundService(intent)
+                                        scope.launch {
+                                            snackbarHostState.showSnackbar(
+                                                context.getString(R.string.local_api_quick_setup_done)
+                                            )
+                                        }
                                     }
                                 )
                             }
@@ -1127,6 +1173,116 @@ fun ModelListScreen(
                             }
                         }
                     }
+                    // Local API settings section
+                    item {
+                        Column {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.padding(bottom = 12.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Cloud,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Text(
+                                    stringResource(R.string.local_api_settings),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                            Text(
+                                stringResource(R.string.local_api_settings_hint),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                                modifier = Modifier.padding(bottom = 12.dp)
+                            )
+
+                            var localApiEnabled by remember {
+                                mutableStateOf(localApiPrefs.getBoolean("local_api_enabled", true))
+                            }
+                            var localApiPort by remember {
+                                mutableStateOf(localApiPrefs.getInt("local_api_port", 8081).toString())
+                            }
+                            var localApiKey by remember {
+                                mutableStateOf(
+                                    localApiPrefs.getString("local_api_key", "local").orEmpty()
+                                        .ifBlank { "local" }
+                                )
+                            }
+
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                                )
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = stringResource(R.string.enable_local_api_model),
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                            Text(
+                                                text = stringResource(R.string.enable_local_api_model_hint),
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                                            )
+                                        }
+                                        Switch(
+                                            checked = localApiEnabled,
+                                            onCheckedChange = {
+                                                localApiEnabled = it
+                                                localApiPrefs.edit { putBoolean("local_api_enabled", it) }
+                                            }
+                                        )
+                                    }
+                                    HorizontalDivider(
+                                        modifier = Modifier.padding(vertical = 12.dp),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f)
+                                    )
+                                    OutlinedTextField(
+                                        value = localApiPort,
+                                        onValueChange = { text ->
+                                            val filtered = text.filter { c -> c.isDigit() }.take(5)
+                                            localApiPort = filtered
+                                            filtered.toIntOrNull()?.takeIf { it in 1..65535 }?.let { port ->
+                                                localApiPrefs.edit { putInt("local_api_port", port) }
+                                            }
+                                        },
+                                        label = { Text(stringResource(R.string.local_api_port)) },
+                                        placeholder = { Text(stringResource(R.string.local_api_port_hint)) },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        singleLine = true,
+                                        enabled = localApiEnabled,
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                                    )
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    OutlinedTextField(
+                                        value = localApiKey,
+                                        onValueChange = {
+                                            localApiKey = it
+                                            localApiPrefs.edit { putString("local_api_key", it) }
+                                        },
+                                        label = { Text(stringResource(R.string.api_key)) },
+                                        placeholder = { Text(stringResource(R.string.api_key_hint)) },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        singleLine = true,
+                                        enabled = localApiEnabled
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     // Feature settings section
                     item {
                         Column {

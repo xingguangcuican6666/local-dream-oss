@@ -285,4 +285,10 @@
     <string name="local_api_port">Local API Port</string>
     <string name="local_api_port_hint">Port (default: 8081)</string>
     <string name="local_api_port_required">Please enter a valid port (1-65535)</string>
+    <string name="local_api_settings">Local API Settings</string>
+    <string name="local_api_settings_hint">Configure a unified local OpenAI-compatible API for quick setup.</string>
+    <string name="enable_local_api_model">Enable Local API quick setup</string>
+    <string name="enable_local_api_model_hint">When disabled, quick setup from installed models is blocked.</string>
+    <string name="local_api_disabled_hint">Local API quick setup is disabled. Please enable it in Settings.</string>
+    <string name="local_api_quick_setup_done">Local API configured and backend restarted.</string>
 </resources>

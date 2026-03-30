@@ -285,4 +285,10 @@
     <string name="local_api_port">本地 API 端口</string>
     <string name="local_api_port_hint">端口（默认：8081）</string>
     <string name="local_api_port_required">请输入有效端口（1-65535）</string>
+    <string name="local_api_settings">本地 API 设置</string>
+    <string name="local_api_settings_hint">统一配置本地 OpenAI 兼容 API，用于一键配置。</string>
+    <string name="enable_local_api_model">启用本地 API 一键配置</string>
+    <string name="enable_local_api_model_hint">关闭后，已安装模型的一键配置将不可用。</string>
+    <string name="local_api_disabled_hint">本地 API 一键配置已关闭，请先在设置中开启。</string>
+    <string name="local_api_quick_setup_done">本地 API 已配置并重启后端。</string>
 </resources>
