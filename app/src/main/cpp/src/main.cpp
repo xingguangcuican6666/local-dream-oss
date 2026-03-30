@@ -55,6 +55,9 @@
 
 int port = 8081;
 std::string listen_address = "127.0.0.1";
+std::string local_api_model_id = "local-dream";
+int backend_runtime_width = 512;
+int backend_runtime_height = 512;
 bool ponyv55 = false;
 bool use_mnn = false;
 bool use_safety_checker = false;
@@ -405,7 +408,8 @@ void processCommandLine(int argc, char **argv) {
     OPT_VAE_ENCODER_ARG = 29,
     OPT_CONVERT = 30,
     OPT_CONVERT_CLIP_SKIP_2 = 31,
-    OPT_UPSCALER_MODE = 32,
+     OPT_UPSCALER_MODE = 32,
+    OPT_MODEL_ID = 33,
     OPT_BACKEND = 3,
     OPT_LOG_LEVEL = 10,
     OPT_VERSION = 13,
@@ -436,6 +440,7 @@ void processCommandLine(int argc, char **argv) {
       {"version", pal::no_argument, NULL, OPT_VERSION},
       {"patch", pal::required_argument, NULL, OPT_PATCH},
       {"upscaler_mode", pal::no_argument, NULL, OPT_UPSCALER_MODE},
+      {"model_id", pal::required_argument, NULL, OPT_MODEL_ID},
       {NULL, 0, NULL, 0}};
   std::string backendPathCmd, systemLibraryPathCmd;
   QnnLog_Level_t logLevel = QNN_LOG_LEVEL_ERROR;
@@ -577,6 +582,9 @@ void processCommandLine(int argc, char **argv) {
       case OPT_UPSCALER_MODE:
         upscaler_mode = true;
         break;
+      case OPT_MODEL_ID:
+        local_api_model_id = pal::g_optArg;
+        break;
       default:
         showHelpAndExit("Invalid argument passed.");
     }
@@ -595,6 +603,22 @@ void processCommandLine(int argc, char **argv) {
     if (sysStatus != dynamicloadutil::StatusCode::SUCCESS)
       showHelpAndExit("Failed get QNN system func ptrs.");
     return;
+  }
+  if (!patchPath.empty()) {
+    try {
+      auto stem = std::filesystem::path(patchPath).stem().string();
+      auto xPos = stem.find('x');
+      if (xPos != std::string::npos) {
+        backend_runtime_width = std::stoi(stem.substr(0, xPos));
+        backend_runtime_height = std::stoi(stem.substr(xPos + 1));
+      } else {
+        backend_runtime_width = std::stoi(stem);
+        backend_runtime_height = backend_runtime_width;
+      }
+    } catch (...) {
+      backend_runtime_width = 512;
+      backend_runtime_height = 512;
+    }
   }
   if (cvt_model) {
     if (!std::filesystem::exists(model_dir)) {
@@ -2387,6 +2411,101 @@ int main(int argc, char **argv) {
   svr.Get("/health", [](const httplib::Request &, httplib::Response &res) {
     res.status = 200;
   });
+  svr.Get("/v1/models", [](const httplib::Request &, httplib::Response &res) {
+    nlohmann::json payload = {
+        {"data", {{{"id", local_api_model_id}, {"object", "model"}}}}};
+    res.status = 200;
+    res.set_content(payload.dump(), "application/json");
+    res.set_header("Access-Control-Allow-Origin", "*");
+  });
+  svr.Post("/v1/images/generations",
+           [&](const httplib::Request &req, httplib::Response &res) {
+             try {
+               auto json = nlohmann::json::parse(req.body);
+               if (!json.contains("prompt")) {
+                 throw std::invalid_argument("Missing 'prompt'");
+               }
+               prompt = json["prompt"].get<std::string>();
+               negative_prompt = json.value("negative_prompt", "");
+               steps = json.value("steps", 20);
+               cfg = json.value("cfg", 7.5f);
+               scheduler_type = json.value("scheduler", "dpm");
+               use_opencl = json.value("use_opencl", false);
+               show_diffusion_process = false;
+               show_diffusion_stride = 1;
+               seed = json.value(
+                   "seed",
+                   (unsigned)hashSeed(std::chrono::system_clock::now()
+                                          .time_since_epoch()
+                                          .count()));
+               request_img2img = false;
+               request_has_mask = false;
+               img_data.clear();
+               mask_data.clear();
+               mask_data_full.clear();
+               denoise_strength = json.value("denoise_strength", 0.6f);
+
+               int req_width = 1024;
+               int req_height = 1024;
+               if (json.contains("size")) {
+                 std::string req_size = json["size"].get<std::string>();
+                 auto sep_pos = req_size.find('x');
+                 if (sep_pos != std::string::npos) {
+                   req_width = std::stoi(req_size.substr(0, sep_pos));
+                   req_height = std::stoi(req_size.substr(sep_pos + 1));
+                 }
+               }
+               if (req_width != backend_runtime_width ||
+                   req_height != backend_runtime_height) {
+                 throw std::invalid_argument(
+                     "Requested size " + std::to_string(req_width) + "x" +
+                     std::to_string(req_height) +
+                     " does not match current backend runtime resolution (" +
+                     std::to_string(backend_runtime_width) + "x" +
+                     std::to_string(backend_runtime_height) + ")");
+               }
+               output_width = req_width;
+               output_height = req_height;
+               sample_width = req_width / 8;
+               sample_height = req_height / 8;
+
+               int n = json.value("n", 1);
+               n = std::clamp(n, 1, 4);
+               nlohmann::json data = nlohmann::json::array();
+               for (int i = 0; i < n; ++i) {
+                 auto result = generateImage(
+                     [](int, int, const std::string &) { return; });
+                 std::vector<uint8_t> output_jpeg = encodeJPEG(
+                     result.image_data, result.width, result.height, 95);
+                 std::string encoded = base64_encode(
+                     std::string(output_jpeg.begin(), output_jpeg.end()));
+                 data.push_back({{"b64_json", encoded}});
+                 seed = hashSeed(seed + i + 1);
+               }
+
+               nlohmann::json payload = {{"created", std::time(nullptr)},
+                                         {"data", data}};
+               res.status = 200;
+               res.set_content(payload.dump(), "application/json");
+               res.set_header("Access-Control-Allow-Origin", "*");
+             } catch (const nlohmann::json::parse_error &e) {
+               nlohmann::json err = {
+                   {"error",
+                    {{"message", "Invalid JSON: " + std::string(e.what())},
+                     {"type", "request_error"}}}};
+               res.status = 400;
+               res.set_content(err.dump(), "application/json");
+               res.set_header("Access-Control-Allow-Origin", "*");
+             } catch (const std::exception &e) {
+               nlohmann::json err = {
+                   {"error",
+                    {{"message", "Server Err: " + std::string(e.what())},
+                     {"type", "server_error"}}}};
+               res.status = 500;
+               res.set_content(err.dump(), "application/json");
+               res.set_header("Access-Control-Allow-Origin", "*");
+             }
+           });
   svr.Post("/generate", [&](const httplib::Request &req,
                             httplib::Response &res) {
     try {

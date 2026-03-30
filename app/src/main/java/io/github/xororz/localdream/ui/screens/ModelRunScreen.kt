@@ -620,11 +620,14 @@ fun ModelRunScreen(
 
     fun cleanup() {
         try {
+            val isLocalApiEnabled = preferences.getBoolean("local_api_enabled", true)
             currentBitmap = null
             generationParams = null
             context.sendBroadcast(Intent(BackgroundGenerationService.ACTION_STOP))
-            val backendServiceIntent = Intent(context, BackendService::class.java)
-            context.stopService(backendServiceIntent)
+            if (!isLocalApiEnabled) {
+                val backendServiceIntent = Intent(context, BackendService::class.java)
+                context.stopService(backendServiceIntent)
+            }
             isRunning = false
             progress = 0f
             errorMessage = null

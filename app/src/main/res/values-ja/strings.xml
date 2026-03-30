@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Local Dream</string>
+    <string name="app_name">Local Dream OSS</string>
     <string name="anythingv5_description">Anime Image Generation</string>
     <string name="chilloutmix_description">ChilloutMix Series</string>
     <string name="qteamix_description">Chibi Style Anime</string>
@@ -24,7 +24,7 @@
     <string name="yes">はい</string>
     <string name="no">いいえ</string>
     <string name="about_app">重要</string>
-    <string name="must_read">このアプリは、CPU/GPU および一部の Qualcomm 製 NPU 上で Stable Diffusion による画像生成を実行できます。\n\nお使いのチップが以下に記載されていない場合、CPU/GPU のみで実行されます。\n対応している NPU 一覧:\n\n- Snapdragon 8 Gen 1\n- Snapdragon 8 Gen 2\n- Snapdragon 8 Gen 3\n- Snapdragon 8 Elite\n- Snapdragon 8 Elite Gen 5\n\nHexagon V68 アーキテクチャ以降の NPU については、実験的なサポートが提供されていますが、\nNPU 上での実行が必ずしも保証されるわけではありません。\n\nこのプロジェクトはオープンソースで、\nhttps://github.com/xororz/local-dream\nにてソースコードの閲覧や Issue の報告ができます。</string>
+    <string name="must_read">このアプリは、CPU/GPU および一部の Qualcomm 製 NPU 上で Stable Diffusion による画像生成を実行できます。\n\nお使いのチップが以下に記載されていない場合、CPU/GPU のみで実行されます。\n対応している NPU 一覧:\n\n- Snapdragon 8 Gen 1\n- Snapdragon 8 Gen 2\n- Snapdragon 8 Gen 3\n- Snapdragon 8 Elite\n- Snapdragon 8 Elite Gen 5\n\nHexagon V68 アーキテクチャ以降の NPU については、実験的なサポートが提供されていますが、\nNPU 上での実行が必ずしも保証されるわけではありません。\n\nこの OSS 版は上流リポジトリを元に再制作しています:\nhttps://github.com/xororz/local-dream\n\nこの OSS リポジトリ:\nhttps://github.com/xingguangcuican6666/local-dream-oss</string>
     <string name="help">help</string>
     <string name="available_models">利用可能なモデル</string>
     <string name="selected_items">%d 選択</string>
@@ -219,4 +219,46 @@
     <string name="resolution">解像度</string>
     <string name="scheduler">スケジューラー</string>
     <string name="extracting">抽出中…</string>
+
+    <!-- OpenAI-compatible API Models -->
+    <string name="api_models">APIモデル</string>
+    <string name="add_api_model">APIモデルを追加</string>
+    <string name="api_model_name">モデル名</string>
+    <string name="api_model_name_hint">表示名（例: 私のDALL-E）</string>
+    <string name="api_model_id">モデルID</string>
+    <string name="api_model_id_hint">モデル識別子（例: dall-e-3）</string>
+    <string name="api_endpoint">APIエンドポイント</string>
+    <string name="api_endpoint_hint">ベースURL（例: https://api.openai.com）</string>
+    <string name="api_key">APIキー</string>
+    <string name="api_key_hint">APIキー（ローカルに保存）</string>
+    <string name="api_model_size">画像サイズ</string>
+    <string name="fetch_models">モデルを取得</string>
+    <string name="fetch_models_hint">エンドポイントから利用可能なモデルIDを取得</string>
+    <string name="no_api_models">APIモデルが設定されていません</string>
+    <string name="no_api_models_hint">+ をタップしてOpenAI互換のAPIモデルを追加</string>
+    <string name="delete_api_model">APIモデルを削除</string>
+    <string name="delete_api_model_confirm">APIモデル "%s" を削除しますか？リモートデータは削除されません。</string>
+    <string name="openai_generating_notify">API経由で生成中…</string>
+    <string name="openai_run_title">API画像生成</string>
+    <string name="api_model_size_label">サイズ：%s</string>
+    <string name="api_generate">生成</string>
+    <string name="api_generating">生成中…</string>
+    <string name="api_model_description">OpenAI互換API</string>
+    <string name="n_images">画像数：%d</string>
+    <string name="api_model_required_fields">名前、モデルID、エンドポイント、APIキーは必須です</string>
+    <string name="fetching_models">モデルを取得中…</string>
+    <string name="select_model_id">モデルIDを選択または入力</string>
+    <string name="api_model_added">APIモデルが正常に追加されました</string>
+    <string name="prompt_empty_hint">プロンプトを入力してください</string>
+    <string name="installed_local_models">インストール済みローカルモデル</string>
+    <string name="quick_setup">クイック設定</string>
+    <string name="local_api_port">ローカル API ポート</string>
+    <string name="local_api_port_hint">ポート（デフォルト: 8081）</string>
+    <string name="local_api_port_required">有効なポート番号（1-65535）を入力してください</string>
+    <string name="local_api_settings">ローカル API 設定</string>
+    <string name="local_api_settings_hint">クイック設定用にローカル OpenAI 互換 API を一元設定します。</string>
+    <string name="enable_local_api_model">ローカル API クイック設定を有効化</string>
+    <string name="enable_local_api_model_hint">無効にすると、インストール済みモデルのクイック設定は使えません。</string>
+    <string name="local_api_disabled_hint">ローカル API クイック設定は無効です。設定で有効化してください。</string>
+    <string name="local_api_quick_setup_done">ローカル API を設定し、バックエンドを再起動しました。</string>
 </resources>

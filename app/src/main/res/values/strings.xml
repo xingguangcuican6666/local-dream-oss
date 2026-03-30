@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Local Dream</string>
+    <string name="app_name">Local Dream OSS</string>
 
     <!-- Models -->
     <string name="anythingv5_description">Anime Image Generation</string>
@@ -30,7 +30,7 @@
     <string name="yes">Yes</string>
     <string name="no">No</string>
     <string name="about_app">Note</string>
-    <string name="must_read">This APP supports running stable diffusion image generation on CPU/GPU and some Qualcomm NPUs.\n\nIf your chip is not one of the following, you can only run it on CPU/GPU. Supported NPU list:\n\n- Snapdragon 8 Gen 1\n- Snapdragon 8 Gen 2\n- Snapdragon 8 Gen 3\n- Snapdragon 8 Elite\n- Snapdragon 8 Elite Gen 5\n\nFor NPU with Hexagon V68 architecture or newer, experimental support is provided, but NPU execution is not guaranteed.\n\nThis project is open source at https://github.com/xororz/local-dream where you can view the source code or submit issues</string>
+    <string name="must_read">This APP supports running stable diffusion image generation on CPU/GPU and some Qualcomm NPUs.\n\nIf your chip is not one of the following, you can only run it on CPU/GPU. Supported NPU list:\n\n- Snapdragon 8 Gen 1\n- Snapdragon 8 Gen 2\n- Snapdragon 8 Gen 3\n- Snapdragon 8 Elite\n- Snapdragon 8 Elite Gen 5\n\nFor NPU with Hexagon V68 architecture or newer, experimental support is provided, but NPU execution is not guaranteed.\n\nThis OSS edition is reworked from the upstream repository: https://github.com/xororz/local-dream\n\nThis OSS repository link: https://github.com/xingguangcuican6666/local-dream-oss</string>
     <string name="help">help</string>
 
     <!-- Model List Screen -->
@@ -249,4 +249,46 @@
     <string name="resolution">Resolution</string>
     <string name="scheduler">Scheduler</string>
     <string name="extracting">Extracting…</string>
+
+    <!-- OpenAI-compatible API Models -->
+    <string name="api_models">API Models</string>
+    <string name="add_api_model">Add API Model</string>
+    <string name="api_model_name">Model Name</string>
+    <string name="api_model_name_hint">Display name (e.g. My DALL-E)</string>
+    <string name="api_model_id">Model ID</string>
+    <string name="api_model_id_hint">Model identifier (e.g. dall-e-3)</string>
+    <string name="api_endpoint">API Endpoint</string>
+    <string name="api_endpoint_hint">Base URL (e.g. https://api.openai.com)</string>
+    <string name="api_key">API Key</string>
+    <string name="api_key_hint">Your API key (stored locally)</string>
+    <string name="api_model_size">Image Size</string>
+    <string name="fetch_models">Fetch Models</string>
+    <string name="fetch_models_hint">Fetch available model IDs from the endpoint</string>
+    <string name="no_api_models">No API models configured</string>
+    <string name="no_api_models_hint">Tap + to add an OpenAI-compatible API model</string>
+    <string name="delete_api_model">Delete API Model</string>
+    <string name="delete_api_model_confirm">Remove API model "%s"? This does not delete any remote data.</string>
+    <string name="openai_generating_notify">Generating via API…</string>
+    <string name="openai_run_title">API Image Generation</string>
+    <string name="api_model_size_label">Size: %s</string>
+    <string name="api_generate">Generate</string>
+    <string name="api_generating">Generating…</string>
+    <string name="api_model_description">OpenAI-compatible API</string>
+    <string name="n_images">Images: %d</string>
+    <string name="api_model_required_fields">Name, Model ID, endpoint and API key are required</string>
+    <string name="fetching_models">Fetching models…</string>
+    <string name="select_model_id">Select or enter model ID</string>
+    <string name="api_model_added">API model added successfully</string>
+    <string name="prompt_empty_hint">Please enter a prompt</string>
+    <string name="installed_local_models">Installed Local Models</string>
+    <string name="quick_setup">Quick Setup</string>
+    <string name="local_api_port">Local API Port</string>
+    <string name="local_api_port_hint">Port (default: 8081)</string>
+    <string name="local_api_port_required">Please enter a valid port (1-65535)</string>
+    <string name="local_api_settings">Local API Settings</string>
+    <string name="local_api_settings_hint">Configure a unified local OpenAI-compatible API for quick setup.</string>
+    <string name="enable_local_api_model">Enable Local API quick setup</string>
+    <string name="enable_local_api_model_hint">When disabled, quick setup from installed models is blocked.</string>
+    <string name="local_api_disabled_hint">Local API quick setup is disabled. Please enable it in Settings.</string>
+    <string name="local_api_quick_setup_done">Local API configured and backend restarted.</string>
 </resources>

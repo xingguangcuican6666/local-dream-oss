@@ -1,0 +1,200 @@
+name: Android CI
+
+on:
+  push:
+    branches: [ "main", "master", "dev" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Rust 1.84.0
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.84.0
+          targets: aarch64-linux-android
+
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build cmake unzip ccache
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Prepare Android NDK and QNN SDK
+        env:
+          QNN_SDK_URL: https://apigwx-aws.qualcomm.com/qsc/public/v1/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/2.39.0.250926/v2.39.0.250926.zip
+          QNN_SDK_ROOT_VAR: ${{ vars.QNN_SDK_ROOT }}
+          ANDROID_NDK_ROOT_VAR: ${{ vars.ANDROID_NDK_ROOT }}
+        run: |
+          set -euo pipefail
+
+          if [ -n "${ANDROID_NDK_ROOT_VAR}" ] && [ -d "${ANDROID_NDK_ROOT_VAR}" ]; then
+            echo "Using ANDROID_NDK_ROOT from repository variable"
+            echo "ANDROID_NDK_ROOT=${ANDROID_NDK_ROOT_VAR}" >> "$GITHUB_ENV"
+          else
+            yes | sdkmanager --licenses >/dev/null || true
+            sdkmanager --install "ndk;28.0.13004108"
+            echo "ANDROID_NDK_ROOT=${ANDROID_SDK_ROOT}/ndk/28.0.13004108" >> "$GITHUB_ENV"
+          fi
+
+          if [ -n "${QNN_SDK_ROOT_VAR}" ] && [ -d "${QNN_SDK_ROOT_VAR}" ]; then
+            echo "Using QNN_SDK_ROOT from repository variable"
+            echo "QNN_SDK_ROOT=${QNN_SDK_ROOT_VAR}" >> "$GITHUB_ENV"
+          else
+            curl -fL --retry 3 --retry-delay 5 -o "${RUNNER_TEMP}/qnn-sdk.zip" "${QNN_SDK_URL}"
+            unzip -q "${RUNNER_TEMP}/qnn-sdk.zip" -d "${RUNNER_TEMP}/qnn-sdk"
+            qnn_lib_path="$(find "${RUNNER_TEMP}/qnn-sdk" -type f -path "*/lib/aarch64-android/libQnnHtp.so" | head -n 1)"
+            if [ -z "${qnn_lib_path}" ]; then
+              echo "QNN SDK extraction failed: libQnnHtp.so not found"
+              exit 1
+            fi
+            qnn_arch_dir="$(dirname "${qnn_lib_path}")"
+            qnn_lib_dir="$(dirname "${qnn_arch_dir}")"
+            qnn_root="$(dirname "${qnn_lib_dir}")"
+            echo "QNN_SDK_ROOT=${qnn_root}" >> "$GITHUB_ENV"
+            echo "Resolved QNN_SDK_ROOT=${qnn_root}"
+          fi
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Build native libraries (required for complete APK artifact)
+        run: |
+          if [ -z "${QNN_SDK_ROOT}" ] || [ ! -d "${QNN_SDK_ROOT}" ]; then
+            echo "QNN_SDK_ROOT is not configured or does not exist."
+            echo "QNN SDK provisioning failed."
+            exit 1
+          fi
+          if [ -z "${ANDROID_NDK_ROOT}" ] || [ ! -d "${ANDROID_NDK_ROOT}" ]; then
+            echo "ANDROID_NDK_ROOT is not configured or does not exist."
+            echo "Android NDK provisioning failed."
+            exit 1
+          fi
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import os
+
+          cmakelists = Path("app/src/main/cpp/CMakeLists.txt")
+          text = cmakelists.read_text(encoding="utf-8")
+          qnn = os.environ["QNN_SDK_ROOT"]
+          text = text.replace(
+              "set(QNN_SDK_ROOT /data/qairt/2.39.0.250926)",
+              f"set(QNN_SDK_ROOT {qnn})"
+          )
+          cmakelists.write_text(text, encoding="utf-8")
+
+          presets = Path("app/src/main/cpp/CMakePresets.json")
+          data = json.loads(presets.read_text(encoding="utf-8"))
+          data["configurePresets"][0]["environment"]["ANDROID_NDK_ROOT"] = os.environ["ANDROID_NDK_ROOT"]
+          presets.write_text(json.dumps(data, indent=2), encoding="utf-8")
+          PY
+
+          chmod +x gradlew app/src/main/cpp/build.sh
+          cd app/src/main/cpp
+          bash ./build.sh
+
+      - name: Verify native runtime files
+        run: |
+          test -f app/src/main/jniLibs/arm64-v8a/libstable_diffusion_core.so
+          test -f app/src/main/assets/qnnlibs/libQnnHtp.so
+          test -f app/src/main/assets/qnnlibs/libQnnSystem.so
+
+      - name: Build debug APK
+        if: github.event_name == 'pull_request'
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Run unit tests
+        if: github.event_name == 'pull_request'
+        run: ./gradlew testBasicDebugUnitTest --no-daemon
+
+      - name: Upload debug APK
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-apk
+          path: app/build/outputs/apk/**/debug/*.apk
+          if-no-files-found: warn
+
+      - name: Validate release signing secrets
+        if: github.event_name != 'pull_request'
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          [ -n "${KEYSTORE_BASE64}" ] || { echo "Missing secret: ANDROID_RELEASE_KEYSTORE_BASE64"; exit 1; }
+          [ -n "${STORE_PASSWORD}" ] || { echo "Missing secret: ANDROID_RELEASE_STORE_PASSWORD"; exit 1; }
+          [ -n "${KEY_ALIAS}" ] || { echo "Missing secret: ANDROID_RELEASE_KEY_ALIAS"; exit 1; }
+          [ -n "${KEY_PASSWORD}" ] || { echo "Missing secret: ANDROID_RELEASE_KEY_PASSWORD"; exit 1; }
+
+      - name: Prepare signing config
+        if: github.event_name != 'pull_request'
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYSTORE_PATH="${RUNNER_TEMP}/release-signing.jks"
+          echo "${KEYSTORE_BASE64}" | base64 -d > "${KEYSTORE_PATH}"
+          {
+            echo "RELEASE_STORE_FILE=${KEYSTORE_PATH}"
+            echo "RELEASE_STORE_PASSWORD=${STORE_PASSWORD}"
+            echo "RELEASE_KEY_ALIAS=${KEY_ALIAS}"
+            echo "RELEASE_KEY_PASSWORD=${KEY_PASSWORD}"
+          } >> "${HOME}/.gradle/gradle.properties"
+
+      - name: Build release APK
+        if: github.event_name != 'pull_request'
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Upload release APK artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-apk
+          path: app/build/outputs/apk/**/release/*.apk
+          if-no-files-found: error
+
+      - name: Prepare release metadata
+        if: github.event_name != 'pull_request'
+        id: release_meta
+        run: |
+          set -euo pipefail
+          VERSION_NAME="$(grep -E 'versionName = ' app/build.gradle.kts | head -n1 | sed -E 's/.*"([^"]+)".*/\1/')"
+          TAG_NAME="v${VERSION_NAME}-${GITHUB_RUN_NUMBER}"
+          RELEASE_NAME="Local Dream ${VERSION_NAME} (${GITHUB_RUN_NUMBER})"
+          echo "tag=${TAG_NAME}" >> "${GITHUB_OUTPUT}"
+          echo "name=${RELEASE_NAME}" >> "${GITHUB_OUTPUT}"
+
+      - name: Create GitHub Release and upload APK
+        if: github.event_name != 'pull_request'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release_meta.outputs.tag }}
+          name: ${{ steps.release_meta.outputs.name }}
+          target_commitish: ${{ github.sha }}
+          generate_release_notes: true
+          files: |
+            app/build/outputs/apk/**/release/*.apk

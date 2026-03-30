@@ -9,8 +9,11 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import java.io.IOException
+import org.json.JSONArray
+import org.json.JSONObject
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "generation_prefs")
+private val Context.openAIDataStore: DataStore<Preferences> by preferencesDataStore(name = "openai_prefs")
 
 class GenerationPreferences(private val context: Context) {
     private fun getPromptKey(modelId: String) = stringPreferencesKey("${modelId}_prompt")
@@ -151,3 +154,31 @@ data class GenerationPrefs(
     val batchCounts: Int = 1,
     val scheduler: String = "dpm"
 )
+
+/**
+ * Persists the list of user-configured OpenAI-compatible API models in a dedicated DataStore.
+ */
+class OpenAIPreferences(private val context: Context) {
+    private val MODELS_KEY = stringPreferencesKey("openai_models_json")
+
+    suspend fun saveModels(models: List<OpenAIModel>) {
+        val array = JSONArray()
+        models.forEach { array.put(it.toJson()) }
+        context.openAIDataStore.edit { prefs ->
+            prefs[MODELS_KEY] = array.toString()
+        }
+    }
+
+    suspend fun loadModels(): List<OpenAIModel> {
+        val json = context.openAIDataStore.data
+            .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
+            .map { prefs -> prefs[MODELS_KEY] ?: "[]" }
+            .first()
+        return try {
+            val array = JSONArray(json)
+            (0 until array.length()).map { OpenAIModel.fromJson(array.getJSONObject(it)) }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+}
