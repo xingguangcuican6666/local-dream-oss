@@ -25,7 +25,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import io.github.xingguangcuican.localdreamoss.navigation.Screen
-import io.github.xingguangcuican.localdreamoss.ui.theme.DefaultThemePrimaryArgb
+import io.github.xingguangcuican.localdreamoss.ui.theme.DefaultThemeAccentArgb
+import io.github.xingguangcuican.localdreamoss.ui.theme.DefaultThemeBackgroundArgb
 import io.github.xingguangcuican.localdreamoss.ui.screens.ModelListScreen
 import io.github.xingguangcuican.localdreamoss.ui.screens.ModelRunScreen
 import io.github.xingguangcuican.localdreamoss.ui.screens.OpenAIModelRunScreen
@@ -125,18 +126,28 @@ class MainActivity : ComponentActivity() {
             var dynamicColorEnabled by remember {
                 mutableStateOf(prefs.getBoolean("theme_dynamic_color", true))
             }
-            var themePrimaryColor by remember {
-                mutableIntStateOf(prefs.getInt("theme_primary_color", DefaultThemePrimaryArgb))
+            var themeAccentColor by remember {
+                mutableIntStateOf(
+                    prefs.getInt("theme_accent_color", DefaultThemeAccentArgb)
+                )
+            }
+            var themeBackgroundColor by remember {
+                mutableIntStateOf(prefs.getInt("theme_background_color", DefaultThemeBackgroundArgb))
             }
             DisposableEffect(prefs) {
-                val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { sp, key ->
+                val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { sharedPrefs, key ->
                     when (key) {
                         "theme_dynamic_color" -> {
-                            dynamicColorEnabled = sp.getBoolean("theme_dynamic_color", true)
+                            dynamicColorEnabled = sharedPrefs.getBoolean("theme_dynamic_color", true)
                         }
 
-                        "theme_primary_color" -> {
-                            themePrimaryColor = sp.getInt("theme_primary_color", DefaultThemePrimaryArgb)
+                        "theme_accent_color" -> {
+                            themeAccentColor =
+                                sharedPrefs.getInt("theme_accent_color", DefaultThemeAccentArgb)
+                        }
+
+                        "theme_background_color" -> {
+                            themeBackgroundColor = sharedPrefs.getInt("theme_background_color", DefaultThemeBackgroundArgb)
                         }
                     }
                 }
@@ -146,7 +157,8 @@ class MainActivity : ComponentActivity() {
 
             LocalDreamTheme(
                 dynamicColor = dynamicColorEnabled,
-                customPrimaryColor = if (dynamicColorEnabled) null else Color(themePrimaryColor)
+                customAccentColor = if (dynamicColorEnabled) null else Color(themeAccentColor),
+                customBackgroundColor = if (dynamicColorEnabled) null else Color(themeBackgroundColor)
             ) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),

@@ -108,6 +108,7 @@ curl -X POST "https://your-api.example.com/v1/images/generations" \
 ```
 
 应用会读取 `data[].b64_json` 并解码成图片，`revised_prompt` 为兼容 OpenAI 风格扩展字段。
+当前本地服务中 `revised_prompt` 会回显输入提示词（不做额外自动改写），用于保持字段级兼容。
 
 > 本地服务同样支持：
 >

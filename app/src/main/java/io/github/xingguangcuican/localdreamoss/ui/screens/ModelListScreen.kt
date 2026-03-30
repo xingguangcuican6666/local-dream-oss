@@ -35,6 +35,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -47,7 +48,8 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.foundation.text.ClickableText
 import androidx.compose.ui.text.style.TextDecoration
 import io.github.xingguangcuican.localdreamoss.R
-import io.github.xingguangcuican.localdreamoss.ui.theme.DefaultThemePrimaryArgb
+import io.github.xingguangcuican.localdreamoss.ui.theme.DefaultThemeAccentArgb
+import io.github.xingguangcuican.localdreamoss.ui.theme.DefaultThemeBackgroundArgb
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -162,7 +164,6 @@ fun ModelListScreen(
     var selectedSource by remember { mutableStateOf("huggingface") }
     val generationPreferences = remember { GenerationPreferences(context) }
     val localApiPrefs = remember { context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE) }
-    val appPrefs = localApiPrefs
     val unifiedLocalApiModelId = "local_api_unified"
     var currentBaseUrl by remember { mutableStateOf("https://huggingface.co/") }
 
@@ -1482,19 +1483,31 @@ fun ModelListScreen(
                             )
 
                             var dynamicColorEnabled by remember {
-                                mutableStateOf(appPrefs.getBoolean("theme_dynamic_color", true))
+                                mutableStateOf(localApiPrefs.getBoolean("theme_dynamic_color", true))
                             }
-                            var selectedThemeColor by remember {
-                                mutableIntStateOf(
-                                    appPrefs.getInt("theme_primary_color", DefaultThemePrimaryArgb)
+                            var accentColorText by remember {
+                                val accent = localApiPrefs.getInt(
+                                    "theme_accent_color",
+                                    DefaultThemeAccentArgb
                                 )
+                                mutableStateOf(String.format("%08X", accent))
                             }
-                            val themeColorOptions = listOf(
-                                DefaultThemePrimaryArgb to stringResource(R.string.theme_color_default),
-                                0xFF006C4C.toInt() to stringResource(R.string.theme_color_emerald),
-                                0xFF0057B8.toInt() to stringResource(R.string.theme_color_ocean),
-                                0xFFB00020.toInt() to stringResource(R.string.theme_color_rose)
-                            )
+                            var backgroundColorText by remember {
+                                val bg = localApiPrefs.getInt(
+                                    "theme_background_color",
+                                    DefaultThemeBackgroundArgb
+                                )
+                                mutableStateOf(String.format("%08X", bg))
+                            }
+                            val parseThemeColor = { input: String ->
+                                val raw = input.removePrefix("#").uppercase()
+                                val normalized = if (raw.length == 6) "FF$raw" else raw
+                                if (normalized.length != 8) {
+                                    null
+                                } else {
+                                    normalized.toUIntOrNull(16)?.toInt()
+                                }
+                            }
 
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
@@ -1524,7 +1537,7 @@ fun ModelListScreen(
                                             checked = dynamicColorEnabled,
                                             onCheckedChange = {
                                                 dynamicColorEnabled = it
-                                                appPrefs.edit { putBoolean("theme_dynamic_color", it) }
+                                                localApiPrefs.edit { putBoolean("theme_dynamic_color", it) }
                                             }
                                         )
                                     }
@@ -1534,28 +1547,74 @@ fun ModelListScreen(
                                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f)
                                         )
                                         Text(
-                                            text = stringResource(R.string.theme_color_select),
+                                            text = stringResource(R.string.theme_custom_palette),
                                             style = MaterialTheme.typography.bodyMedium,
                                             fontWeight = FontWeight.Medium,
                                             modifier = Modifier.padding(bottom = 8.dp)
                                         )
-                                        Row(
+                                        Text(
+                                            text = stringResource(R.string.theme_color_input_hint),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                                            modifier = Modifier.padding(bottom = 8.dp)
+                                        )
+                                        OutlinedTextField(
+                                            value = accentColorText,
+                                            onValueChange = { raw ->
+                                                val filtered = raw.filter { it.isDigit() || it in 'a'..'f' || it in 'A'..'F' }
+                                                    .take(8)
+                                                    .uppercase()
+                                                accentColorText = filtered
+                                                parseThemeColor(filtered)?.let { colorValue ->
+                                                    localApiPrefs.edit {
+                                                        putInt("theme_accent_color", colorValue)
+                                                    }
+                                                }
+                                            },
+                                            label = { Text(stringResource(R.string.theme_accent_color)) },
+                                            placeholder = { Text("FF6650A4") },
+                                            singleLine = true,
                                             modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                        ) {
-                                            themeColorOptions.forEach { (colorValue, colorLabel) ->
-                                                FilterChip(
-                                                    selected = selectedThemeColor == colorValue,
-                                                    onClick = {
-                                                        selectedThemeColor = colorValue
-                                                        appPrefs.edit {
-                                                            putInt("theme_primary_color", colorValue)
-                                                        }
-                                                    },
-                                                    label = { Text(colorLabel) }
-                                                )
+                                            trailingIcon = {
+                                                parseThemeColor(accentColorText)?.let { colorValue ->
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(20.dp)
+                                                            .clip(CircleShape)
+                                                            .background(Color(colorValue))
+                                                    )
+                                                }
                                             }
-                                        }
+                                        )
+                                        Spacer(modifier = Modifier.height(12.dp))
+                                        OutlinedTextField(
+                                            value = backgroundColorText,
+                                            onValueChange = { raw ->
+                                                val filtered = raw.filter { it.isDigit() || it in 'a'..'f' || it in 'A'..'F' }
+                                                    .take(8)
+                                                    .uppercase()
+                                                backgroundColorText = filtered
+                                                parseThemeColor(filtered)?.let { colorValue ->
+                                                    localApiPrefs.edit {
+                                                        putInt("theme_background_color", colorValue)
+                                                    }
+                                                }
+                                            },
+                                            label = { Text(stringResource(R.string.theme_background_color)) },
+                                            placeholder = { Text("FFFFFBFE") },
+                                            singleLine = true,
+                                            modifier = Modifier.fillMaxWidth(),
+                                            trailingIcon = {
+                                                parseThemeColor(backgroundColorText)?.let { colorValue ->
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(20.dp)
+                                                            .clip(CircleShape)
+                                                            .background(Color(colorValue))
+                                                    )
+                                                }
+                                            }
+                                        )
                                     }
                                 }
                             }

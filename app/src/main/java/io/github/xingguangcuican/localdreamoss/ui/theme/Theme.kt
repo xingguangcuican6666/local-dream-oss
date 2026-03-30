@@ -39,7 +39,8 @@ fun LocalDreamTheme(
         darkTheme: Boolean = isSystemInDarkTheme(),
         // Dynamic color is available on Android 12+
         dynamicColor: Boolean = true,
-        customPrimaryColor: Color? = null,
+        customAccentColor: Color? = null,
+        customBackgroundColor: Color? = null,
         content: @Composable () -> Unit
 ) {
     val colorScheme = when {
@@ -50,20 +51,28 @@ fun LocalDreamTheme(
 
         darkTheme -> {
             val base = DarkColorScheme
-            customPrimaryColor?.let {
+            if (customAccentColor != null || customBackgroundColor != null) {
                 base.copy(
-                    primary = it
+                    primary = customAccentColor ?: base.primary,
+                    secondary = customAccentColor ?: base.secondary,
+                    tertiary = customAccentColor ?: base.tertiary,
+                    background = customBackgroundColor ?: base.background,
+                    surface = customBackgroundColor ?: base.surface
                 )
-            } ?: base
+            } else base
         }
 
         else -> {
             val base = LightColorScheme
-            customPrimaryColor?.let {
+            if (customAccentColor != null || customBackgroundColor != null) {
                 base.copy(
-                    primary = it
+                    primary = customAccentColor ?: base.primary,
+                    secondary = customAccentColor ?: base.secondary,
+                    tertiary = customAccentColor ?: base.tertiary,
+                    background = customBackgroundColor ?: base.background,
+                    surface = customBackgroundColor ?: base.surface
                 )
-            } ?: base
+            } else base
         }
     }
 

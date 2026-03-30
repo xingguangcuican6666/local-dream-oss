@@ -2466,9 +2466,45 @@ int main(int argc, char **argv) {
     if (!has_param("input_fidelity")) {
       return current_denoise_strength;
     }
-    float fidelity = std::stof(get_param("input_fidelity"));
+    float fidelity = 0.0f;
+    try {
+      fidelity = std::stof(get_param("input_fidelity"));
+    } catch (const std::exception &) {
+      throw std::invalid_argument("Invalid numeric field 'input_fidelity'");
+    }
     fidelity = std::clamp(fidelity, 0.0f, 1.0f);
     return 1.0f - fidelity;
+  };
+
+  auto parse_int_param_or_default = [](const httplib::Request &req,
+                                       const std::string &key, int default_value) {
+    if (!req.has_param(key)) return default_value;
+    try {
+      return std::stoi(req.get_param_value(key));
+    } catch (const std::exception &) {
+      throw std::invalid_argument("Invalid numeric field '" + key + "'");
+    }
+  };
+
+  auto parse_float_param_or_default = [](const httplib::Request &req,
+                                         const std::string &key, float default_value) {
+    if (!req.has_param(key)) return default_value;
+    try {
+      return std::stof(req.get_param_value(key));
+    } catch (const std::exception &) {
+      throw std::invalid_argument("Invalid numeric field '" + key + "'");
+    }
+  };
+
+  auto parse_unsigned_param_or_default = [](const httplib::Request &req,
+                                            const std::string &key,
+                                            unsigned default_value) {
+    if (!req.has_param(key)) return default_value;
+    try {
+      return static_cast<unsigned>(std::stoul(req.get_param_value(key)));
+    } catch (const std::exception &) {
+      throw std::invalid_argument("Invalid numeric field '" + key + "'");
+    }
   };
 
   auto decode_request_image_or_throw = [&](const std::string &image_binary) {
@@ -2599,8 +2635,8 @@ int main(int argc, char **argv) {
                    req.has_param("negative_prompt")
                        ? req.get_param_value("negative_prompt")
                        : "";
-               steps = req.has_param("steps") ? std::stoi(req.get_param_value("steps")) : 20;
-               cfg = req.has_param("cfg") ? std::stof(req.get_param_value("cfg")) : 7.5f;
+                steps = parse_int_param_or_default(req, "steps", 20);
+                cfg = parse_float_param_or_default(req, "cfg", 7.5f);
                scheduler_type =
                    req.has_param("scheduler") ? req.get_param_value("scheduler") : "dpm";
                use_opencl = req.has_param("use_opencl") &&
@@ -2608,13 +2644,11 @@ int main(int argc, char **argv) {
                              req.get_param_value("use_opencl") == "1");
                show_diffusion_process = false;
                show_diffusion_stride = 1;
-               seed = req.has_param("seed")
-                          ? static_cast<unsigned>(std::stoul(req.get_param_value("seed")))
-                          : static_cast<unsigned>(hashSeed(
-                                std::chrono::system_clock::now().time_since_epoch().count()));
-               denoise_strength = req.has_param("denoise_strength")
-                                      ? std::stof(req.get_param_value("denoise_strength"))
-                                      : 0.6f;
+                seed = parse_unsigned_param_or_default(
+                    req, "seed",
+                    static_cast<unsigned>(hashSeed(
+                        std::chrono::system_clock::now().time_since_epoch().count())));
+                denoise_strength = parse_float_param_or_default(req, "denoise_strength", 0.6f);
                denoise_strength = apply_input_fidelity_if_present(
                    [&](const std::string &key) { return req.has_param(key); },
                    [&](const std::string &key) { return req.get_param_value(key); },
@@ -2642,7 +2676,7 @@ int main(int argc, char **argv) {
                  throw std::invalid_argument("Err proc img/mask: " + std::string(e.what()));
                }
 
-               int n = req.has_param("n") ? std::stoi(req.get_param_value("n")) : 1;
+                int n = parse_int_param_or_default(req, "n", 1);
                nlohmann::json payload = build_openai_images_response(n, prompt);
                res.status = 200;
                res.set_content(payload.dump(), "application/json");
@@ -2680,8 +2714,8 @@ int main(int argc, char **argv) {
 
                prompt = req.has_param("prompt") ? req.get_param_value("prompt") : "";
                negative_prompt = "";
-               steps = req.has_param("steps") ? std::stoi(req.get_param_value("steps")) : 20;
-               cfg = req.has_param("cfg") ? std::stof(req.get_param_value("cfg")) : 7.5f;
+                steps = parse_int_param_or_default(req, "steps", 20);
+                cfg = parse_float_param_or_default(req, "cfg", 7.5f);
                scheduler_type =
                    req.has_param("scheduler") ? req.get_param_value("scheduler") : "dpm";
                use_opencl = req.has_param("use_opencl") &&
@@ -2689,13 +2723,11 @@ int main(int argc, char **argv) {
                              req.get_param_value("use_opencl") == "1");
                show_diffusion_process = false;
                show_diffusion_stride = 1;
-               seed = req.has_param("seed")
-                          ? static_cast<unsigned>(std::stoul(req.get_param_value("seed")))
-                          : static_cast<unsigned>(hashSeed(
-                                std::chrono::system_clock::now().time_since_epoch().count()));
-               denoise_strength = req.has_param("denoise_strength")
-                                      ? std::stof(req.get_param_value("denoise_strength"))
-                                      : 0.8f;
+                seed = parse_unsigned_param_or_default(
+                    req, "seed",
+                    static_cast<unsigned>(hashSeed(
+                        std::chrono::system_clock::now().time_since_epoch().count())));
+                denoise_strength = parse_float_param_or_default(req, "denoise_strength", 0.8f);
                denoise_strength = apply_input_fidelity_if_present(
                    [&](const std::string &key) { return req.has_param(key); },
                    [&](const std::string &key) { return req.get_param_value(key); },
@@ -2716,7 +2748,7 @@ int main(int argc, char **argv) {
                  throw std::invalid_argument("Err proc image: " + std::string(e.what()));
                }
 
-               int n = req.has_param("n") ? std::stoi(req.get_param_value("n")) : 1;
+                int n = parse_int_param_or_default(req, "n", 1);
                nlohmann::json payload = build_openai_images_response(n, prompt);
                res.status = 200;
                res.set_content(payload.dump(), "application/json");
