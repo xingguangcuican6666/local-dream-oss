@@ -55,20 +55,14 @@ jobs:
           else
             curl -fL --retry 3 --retry-delay 5 -o "${RUNNER_TEMP}/qnn-sdk.zip" "${QNN_SDK_URL}"
             unzip -q "${RUNNER_TEMP}/qnn-sdk.zip" -d "${RUNNER_TEMP}/qnn-sdk"
-            python - <<'PY'
-            import os
-            from pathlib import Path
-
-            root = Path(os.environ["RUNNER_TEMP"]) / "qnn-sdk"
-            marker = "lib/aarch64-android/libQnnHtp.so"
-            candidate = next((p for p in root.rglob("libQnnHtp.so") if str(p).endswith(marker)), None)
-            if candidate is None:
-                raise SystemExit("QNN SDK extraction failed: libQnnHtp.so not found")
-            qnn_root = candidate.parents[2]
-            with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as f:
-                f.write(f"QNN_SDK_ROOT={qnn_root}\n")
-            print(f"Resolved QNN_SDK_ROOT={qnn_root}")
-            PY
+            qnn_lib_path="$(find "${RUNNER_TEMP}/qnn-sdk" -type f -path "*/lib/aarch64-android/libQnnHtp.so" | head -n 1)"
+            if [ -z "${qnn_lib_path}" ]; then
+              echo "QNN SDK extraction failed: libQnnHtp.so not found"
+              exit 1
+            fi
+            qnn_root="$(dirname "$(dirname "$(dirname "${qnn_lib_path}")")")"
+            echo "QNN_SDK_ROOT=${qnn_root}" >> "$GITHUB_ENV"
+            echo "Resolved QNN_SDK_ROOT=${qnn_root}"
           fi
 
       - name: Set up JDK 17
