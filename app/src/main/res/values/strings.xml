@@ -282,4 +282,7 @@
     <string name="prompt_empty_hint">Please enter a prompt</string>
     <string name="installed_local_models">Installed Local Models</string>
     <string name="quick_setup">Quick Setup</string>
+    <string name="local_api_port">Local API Port</string>
+    <string name="local_api_port_hint">Port (default: 8081)</string>
+    <string name="local_api_port_required">Please enter a valid port (1-65535)</string>
 </resources>

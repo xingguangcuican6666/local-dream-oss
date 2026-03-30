@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import io.github.xororz.localdream.data.*
 import io.github.xororz.localdream.navigation.Screen
+import io.github.xororz.localdream.service.BackendService
 import io.github.xororz.localdream.service.ModelDownloadService
 import kotlinx.coroutines.launch
 import java.text.DecimalFormat
@@ -151,6 +152,8 @@ fun ModelListScreen(
     var apiModelPrefillName by remember { mutableStateOf("") }
     var apiModelPrefillModelId by remember { mutableStateOf("") }
     var apiModelPrefillSize by remember { mutableStateOf("1024x1024") }
+    var quickSetupBackendModelId by remember { mutableStateOf<String?>(null) }
+    var quickSetupResolution by remember { mutableIntStateOf(512) }
     var showDeleteApiModelConfirm by remember { mutableStateOf<io.github.xororz.localdream.data.OpenAIModel?>(null) }
     var isConverting by remember { mutableStateOf(false) }
     var conversionProgress by remember { mutableStateOf("") }
@@ -603,19 +606,34 @@ fun ModelListScreen(
                 apiModelPrefillName = ""
                 apiModelPrefillModelId = ""
                 apiModelPrefillSize = "1024x1024"
+                quickSetupBackendModelId = null
             },
             onAdded = {
                 showAddApiModelDialog = false
                 apiModelPrefillName = ""
                 apiModelPrefillModelId = ""
                 apiModelPrefillSize = "1024x1024"
+                quickSetupBackendModelId = null
                 scope.launch {
                     snackbarHostState.showSnackbar(context.getString(R.string.api_model_added))
                 }
             },
             initialName = apiModelPrefillName,
             initialModelId = apiModelPrefillModelId,
-            initialSize = apiModelPrefillSize
+            initialSize = apiModelPrefillSize,
+            isQuickSetup = quickSetupBackendModelId != null,
+            onStartBackendService = quickSetupBackendModelId?.let { modelId ->
+                {
+                    val size = quickSetupResolution.coerceAtLeast(128)
+                    val intent = Intent(context, BackendService::class.java).apply {
+                        action = BackendService.ACTION_RESTART
+                        putExtra("modelId", modelId)
+                        putExtra("width", size)
+                        putExtra("height", size)
+                    }
+                    context.startForegroundService(intent)
+                }
+            }
         )
     }
 
@@ -722,7 +740,10 @@ fun ModelListScreen(
                     ) {
                         item {
                             OutlinedButton(
-                                onClick = { showAddApiModelDialog = true },
+                                onClick = {
+                                    quickSetupBackendModelId = null
+                                    showAddApiModelDialog = true
+                                },
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Icon(
@@ -748,9 +769,11 @@ fun ModelListScreen(
                                     model = model,
                                     onQuickSetup = {
                                         apiModelPrefillName = model.name
-                                        apiModelPrefillModelId = ""
+                                        apiModelPrefillModelId = model.id
                                         val sz = model.generationSize
                                         apiModelPrefillSize = "${sz}x${sz}"
+                                        quickSetupBackendModelId = model.id
+                                        quickSetupResolution = sz
                                         showAddApiModelDialog = true
                                     }
                                 )
@@ -3125,6 +3148,17 @@ private fun OpenAIModelCard(
     onDeleteClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val elevation by animateFloatAsState(
+        targetValue = 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
+        label = "ApiCardElevationAnimation"
+    )
+
+    val contentColor = MaterialTheme.colorScheme.onSurface
+
     ElevatedCard(
         modifier = modifier
             .fillMaxWidth()
@@ -3133,6 +3167,9 @@ private fun OpenAIModelCard(
             },
         colors = CardDefaults.elevatedCardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerLowest
+        ),
+        elevation = CardDefaults.elevatedCardElevation(
+            defaultElevation = elevation.dp
         ),
         shape = MaterialTheme.shapes.large
     ) {
@@ -3160,19 +3197,20 @@ private fun OpenAIModelCard(
             ) {
                 Text(
                     text = model.name,
-                    style = MaterialTheme.typography.titleLarge
+                    style = MaterialTheme.typography.titleLarge,
+                    color = contentColor
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = model.modelId,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                    color = contentColor.copy(alpha = 0.8f)
                 )
                 if (model.description.isNotEmpty()) {
                     Text(
                         text = model.description,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        color = contentColor.copy(alpha = 0.6f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -3186,7 +3224,7 @@ private fun OpenAIModelCard(
                     Text(
                         text = model.apiEndpoint,
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                        color = contentColor.copy(alpha = 0.5f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f)
@@ -3216,7 +3254,9 @@ private fun AddApiModelDialog(
     onAdded: () -> Unit,
     initialName: String = "",
     initialModelId: String = "",
-    initialSize: String = "1024x1024"
+    initialSize: String = "1024x1024",
+    isQuickSetup: Boolean = false,
+    onStartBackendService: (() -> Unit)? = null
 ) {
     val commonSizes = listOf("256x256", "512x512", "768x768", "1024x1024", "1024x1792", "1792x1024")
     var name by remember(initialName) { mutableStateOf(initialName) }
@@ -3224,6 +3264,7 @@ private fun AddApiModelDialog(
     var apiEndpoint by remember { mutableStateOf("") }
     var apiKey by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
+    var localApiPort by remember { mutableStateOf("8081") }
     var selectedSize by remember(initialSize) { mutableStateOf(if (initialSize in commonSizes) initialSize else "1024x1024") }
     var showError by remember { mutableStateOf(false) }
 
@@ -3243,138 +3284,154 @@ private fun AddApiModelDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text(stringResource(R.string.api_model_name)) },
-                    placeholder = { Text(stringResource(R.string.api_model_name_hint)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    isError = showError && name.isBlank()
-                )
-                OutlinedTextField(
-                    value = apiEndpoint,
-                    onValueChange = { apiEndpoint = it },
-                    label = { Text(stringResource(R.string.api_endpoint)) },
-                    placeholder = { Text(stringResource(R.string.api_endpoint_hint)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    isError = showError && apiEndpoint.isBlank()
-                )
-                OutlinedTextField(
-                    value = apiKey,
-                    onValueChange = { apiKey = it },
-                    label = { Text(stringResource(R.string.api_key)) },
-                    placeholder = { Text(stringResource(R.string.api_key_hint)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    isError = showError && apiKey.isBlank()
-                )
+                if (isQuickSetup) {
+                    OutlinedTextField(
+                        value = localApiPort,
+                        onValueChange = { text ->
+                            localApiPort = text.filter { char -> char.isDigit() }.take(5)
+                        },
+                        label = { Text(stringResource(R.string.local_api_port)) },
+                        placeholder = { Text(stringResource(R.string.local_api_port_hint)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        isError = showError && localApiPort.toIntOrNull()?.let { it !in 1..65535 } != false
+                    )
+                } else {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        label = { Text(stringResource(R.string.api_model_name)) },
+                        placeholder = { Text(stringResource(R.string.api_model_name_hint)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        isError = showError && name.isBlank()
+                    )
+                    OutlinedTextField(
+                        value = apiEndpoint,
+                        onValueChange = { apiEndpoint = it },
+                        label = { Text(stringResource(R.string.api_endpoint)) },
+                        placeholder = { Text(stringResource(R.string.api_endpoint_hint)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        isError = showError && apiEndpoint.isBlank()
+                    )
+                    OutlinedTextField(
+                        value = apiKey,
+                        onValueChange = { apiKey = it },
+                        label = { Text(stringResource(R.string.api_key)) },
+                        placeholder = { Text(stringResource(R.string.api_key_hint)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        isError = showError && apiKey.isBlank()
+                    )
 
-                // Fetch models button + model ID picker
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                    // Fetch models button + model ID picker
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        ExposedDropdownMenuBox(
+                            expanded = modelDropdownExpanded,
+                            onExpandedChange = { modelDropdownExpanded = !modelDropdownExpanded },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            OutlinedTextField(
+                                value = modelId,
+                                onValueChange = { modelId = it },
+                                label = { Text(stringResource(R.string.api_model_id)) },
+                                placeholder = { Text(stringResource(R.string.api_model_id_hint)) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .menuAnchor(),
+                                singleLine = true,
+                                isError = showError && modelId.isBlank(),
+                                trailingIcon = {
+                                    if (remoteModelIds.isNotEmpty()) {
+                                        ExposedDropdownMenuDefaults.TrailingIcon(expanded = modelDropdownExpanded)
+                                    }
+                                }
+                            )
+                            if (remoteModelIds.isNotEmpty()) {
+                                ExposedDropdownMenu(
+                                    expanded = modelDropdownExpanded,
+                                    onDismissRequest = { modelDropdownExpanded = false }
+                                ) {
+                                    remoteModelIds.forEach { id ->
+                                        DropdownMenuItem(
+                                            text = { Text(id) },
+                                            onClick = {
+                                                modelId = id
+                                                modelDropdownExpanded = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        FilledTonalIconButton(
+                            onClick = {
+                                if (apiEndpoint.isNotBlank() && apiKey.isNotBlank()) {
+                                    repository.fetchRemoteModels(apiEndpoint, apiKey)
+                                }
+                            },
+                            enabled = !isFetching && apiEndpoint.isNotBlank() && apiKey.isNotBlank()
+                        ) {
+                            if (isFetching) {
+                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                            } else {
+                                Icon(Icons.Default.Refresh, stringResource(R.string.fetch_models))
+                            }
+                        }
+                    }
+
+                    // Size picker
                     ExposedDropdownMenuBox(
-                        expanded = modelDropdownExpanded,
-                        onExpandedChange = { modelDropdownExpanded = !modelDropdownExpanded },
-                        modifier = Modifier.weight(1f)
+                        expanded = dropdownExpanded,
+                        onExpandedChange = { dropdownExpanded = !dropdownExpanded }
                     ) {
                         OutlinedTextField(
-                            value = modelId,
-                            onValueChange = { modelId = it },
-                            label = { Text(stringResource(R.string.api_model_id)) },
-                            placeholder = { Text(stringResource(R.string.api_model_id_hint)) },
+                            value = selectedSize,
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text(stringResource(R.string.api_model_size)) },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .menuAnchor(),
-                            singleLine = true,
-                            isError = showError && modelId.isBlank(),
                             trailingIcon = {
-                                if (remoteModelIds.isNotEmpty()) {
-                                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = modelDropdownExpanded)
-                                }
+                                ExposedDropdownMenuDefaults.TrailingIcon(expanded = dropdownExpanded)
                             }
                         )
-                        if (remoteModelIds.isNotEmpty()) {
-                            ExposedDropdownMenu(
-                                expanded = modelDropdownExpanded,
-                                onDismissRequest = { modelDropdownExpanded = false }
-                            ) {
-                                remoteModelIds.forEach { id ->
-                                    DropdownMenuItem(
-                                        text = { Text(id) },
-                                        onClick = {
-                                            modelId = id
-                                            modelDropdownExpanded = false
-                                        }
-                                    )
-                                }
+                        ExposedDropdownMenu(
+                            expanded = dropdownExpanded,
+                            onDismissRequest = { dropdownExpanded = false }
+                        ) {
+                            commonSizes.forEach { size ->
+                                DropdownMenuItem(
+                                    text = { Text(size) },
+                                    onClick = {
+                                        selectedSize = size
+                                        dropdownExpanded = false
+                                    }
+                                )
                             }
                         }
                     }
-                    FilledTonalIconButton(
-                        onClick = {
-                            if (apiEndpoint.isNotBlank() && apiKey.isNotBlank()) {
-                                repository.fetchRemoteModels(apiEndpoint, apiKey)
-                            }
-                        },
-                        enabled = !isFetching && apiEndpoint.isNotBlank() && apiKey.isNotBlank()
-                    ) {
-                        if (isFetching) {
-                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                        } else {
-                            Icon(Icons.Default.Refresh, stringResource(R.string.fetch_models))
-                        }
-                    }
-                }
 
-                // Size picker
-                ExposedDropdownMenuBox(
-                    expanded = dropdownExpanded,
-                    onExpandedChange = { dropdownExpanded = !dropdownExpanded }
-                ) {
                     OutlinedTextField(
-                        value = selectedSize,
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text(stringResource(R.string.api_model_size)) },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .menuAnchor(),
-                        trailingIcon = {
-                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = dropdownExpanded)
-                        }
+                        value = description,
+                        onValueChange = { description = it },
+                        label = { Text(stringResource(R.string.custom_model_hint)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        maxLines = 2
                     )
-                    ExposedDropdownMenu(
-                        expanded = dropdownExpanded,
-                        onDismissRequest = { dropdownExpanded = false }
-                    ) {
-                        commonSizes.forEach { size ->
-                            DropdownMenuItem(
-                                text = { Text(size) },
-                                onClick = {
-                                    selectedSize = size
-                                    dropdownExpanded = false
-                                }
-                            )
-                        }
-                    }
                 }
-
-                OutlinedTextField(
-                    value = description,
-                    onValueChange = { description = it },
-                    label = { Text(stringResource(R.string.custom_model_hint)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    maxLines = 2
-                )
 
                 if (showError) {
                     Text(
-                        stringResource(R.string.api_model_required_fields),
+                        if (isQuickSetup) stringResource(R.string.local_api_port_required)
+                        else stringResource(R.string.api_model_required_fields),
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodySmall
                     )
@@ -3384,6 +3441,27 @@ private fun AddApiModelDialog(
         confirmButton = {
             TextButton(
                 onClick = {
+                    if (isQuickSetup) {
+                        val port = localApiPort.toIntOrNull()
+                        if (port == null || port !in 1..65535) {
+                            showError = true
+                            return@TextButton
+                        }
+                        val endpoint = "http://127.0.0.1:$port"
+                        val newModel = io.github.xororz.localdream.data.OpenAIModel(
+                            id = java.util.UUID.randomUUID().toString(),
+                            name = initialName.ifBlank { "Local Dream API" },
+                            modelId = initialModelId.ifBlank { "local-dream" },
+                            apiEndpoint = endpoint,
+                            apiKey = "local",
+                            description = "",
+                            supportedSizes = listOf(selectedSize)
+                        )
+                        repository.addModel(newModel)
+                        onAdded()
+                        onStartBackendService?.invoke()
+                        return@TextButton
+                    }
                     if (name.isBlank() || modelId.isBlank() || apiEndpoint.isBlank() || apiKey.isBlank()) {
                         showError = true
                         return@TextButton

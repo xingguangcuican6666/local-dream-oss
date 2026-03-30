@@ -252,4 +252,7 @@
     <string name="prompt_empty_hint">プロンプトを入力してください</string>
     <string name="installed_local_models">インストール済みローカルモデル</string>
     <string name="quick_setup">クイック設定</string>
+    <string name="local_api_port">ローカル API ポート</string>
+    <string name="local_api_port_hint">ポート（デフォルト: 8081）</string>
+    <string name="local_api_port_required">有効なポート番号（1-65535）を入力してください</string>
 </resources>
