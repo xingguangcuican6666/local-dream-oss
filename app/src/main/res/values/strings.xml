@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Local Dream</string>
+    <string name="app_name">Local Dream OSS</string>
 
     <!-- Models -->
     <string name="anythingv5_description">Anime Image Generation</string>
@@ -30,7 +30,7 @@
     <string name="yes">Yes</string>
     <string name="no">No</string>
     <string name="about_app">Note</string>
-    <string name="must_read">This APP supports running stable diffusion image generation on CPU/GPU and some Qualcomm NPUs.\n\nIf your chip is not one of the following, you can only run it on CPU/GPU. Supported NPU list:\n\n- Snapdragon 8 Gen 1\n- Snapdragon 8 Gen 2\n- Snapdragon 8 Gen 3\n- Snapdragon 8 Elite\n- Snapdragon 8 Elite Gen 5\n\nFor NPU with Hexagon V68 architecture or newer, experimental support is provided, but NPU execution is not guaranteed.\n\nThis project is open source at https://github.com/xororz/local-dream where you can view the source code or submit issues</string>
+    <string name="must_read">This APP supports running stable diffusion image generation on CPU/GPU and some Qualcomm NPUs.\n\nIf your chip is not one of the following, you can only run it on CPU/GPU. Supported NPU list:\n\n- Snapdragon 8 Gen 1\n- Snapdragon 8 Gen 2\n- Snapdragon 8 Gen 3\n- Snapdragon 8 Elite\n- Snapdragon 8 Elite Gen 5\n\nFor NPU with Hexagon V68 architecture or newer, experimental support is provided, but NPU execution is not guaranteed.\n\nThis OSS edition is reworked from the upstream repository: https://github.com/xororz/local-dream\n\nThis OSS repository link: https://github.com/xingguangcuican6666/local-dream-oss</string>
     <string name="help">help</string>
 
     <!-- Model List Screen -->
