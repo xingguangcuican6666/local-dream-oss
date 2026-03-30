@@ -1,6 +1,6 @@
 <div align="center">
 
-# Local Dream <img src="./assets/icon.png" width="32" alt="Local Dream">
+# Local Dream OSS <img src="./assets/icon.png" width="32" alt="Local Dream">
 
 **Android Stable Diffusion with Snapdragon NPU acceleration**  
 _Also supports CPU/GPU inference_
@@ -11,9 +11,45 @@ _Also supports CPU/GPU inference_
 
 ## About this Repo
 
-This project is **now open sourced and completely free**. Hope you enjoy it!
+This is the **open-source version** of [Local Dream](https://github.com/xororz/local-dream) — an Android app for on-device Stable Diffusion image generation. The OSS version is **completely free** and adds developer-oriented features on top of the original app.
 
-If you like it, please consider [sponsor](https://github.com/xororz/local-dream?tab=readme-ov-file#-support-this-project) this project.
+Source repository: **[xororz/local-dream](https://github.com/xororz/local-dream)**
+
+If you like it, please consider [sponsoring](https://github.com/xororz/local-dream?tab=readme-ov-file#-support-this-project) the original project.
+
+## 🆕 OSS-Exclusive Features
+
+### 🔌 OpenAI-Compatible Local API Server
+
+The OSS version embeds a lightweight HTTP server that exposes the on-device inference engine as an **OpenAI-compatible image generation API**, letting other apps and tools use your phone as a local AI backend.
+
+**Endpoints:**
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/v1/models` | List available model IDs |
+| `POST` | `/v1/images/generations` | Generate images (OpenAI format) |
+
+**Highlights:**
+- Bearer token authentication (`Authorization: Bearer <API_KEY>`)
+- Returns images as Base64-encoded JSON (`b64_json`)
+- Configurable port (default: **8081**) and API key (default: `local`)
+- CORS enabled for browser/cross-origin clients
+
+### 📡 API Models Tab
+
+A dedicated **API Models** tab in the model list lets you:
+- Add any OpenAI-compatible remote or local API endpoint
+- Configure custom base URLs, API keys, and model IDs
+- Auto-fetch available models from any `/v1/models` endpoint
+- One-click **Quick Setup** to wire the local server to the in-app model selector
+
+### ⚙️ Local API Settings
+
+Toggle and configure the built-in server directly from the app:
+- **Enable / disable** the local API server
+- Set the **listening port**
+- Set the **API key**
 
 > [!NOTE]
 > Currently focus on SD1.5 models. SD2.1 models are no longer maintained due to poor quality and not popular. SDXL/Flux models are too large for most devices. So will not support them for now.
