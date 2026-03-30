@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Local Dream</string>
+    <string name="app_name">Local Dream OSS</string>
     <string name="anythingv5_description">Anime Image Generation</string>
     <string name="chilloutmix_description">ChilloutMix Series</string>
     <string name="qteamix_description">Chibi Style Anime</string>
@@ -24,7 +24,7 @@
     <string name="yes">はい</string>
     <string name="no">いいえ</string>
     <string name="about_app">重要</string>
-    <string name="must_read">このアプリは、CPU/GPU および一部の Qualcomm 製 NPU 上で Stable Diffusion による画像生成を実行できます。\n\nお使いのチップが以下に記載されていない場合、CPU/GPU のみで実行されます。\n対応している NPU 一覧:\n\n- Snapdragon 8 Gen 1\n- Snapdragon 8 Gen 2\n- Snapdragon 8 Gen 3\n- Snapdragon 8 Elite\n- Snapdragon 8 Elite Gen 5\n\nHexagon V68 アーキテクチャ以降の NPU については、実験的なサポートが提供されていますが、\nNPU 上での実行が必ずしも保証されるわけではありません。\n\nこのプロジェクトはオープンソースで、\nhttps://github.com/xororz/local-dream\nにてソースコードの閲覧や Issue の報告ができます。</string>
+    <string name="must_read">このアプリは、CPU/GPU および一部の Qualcomm 製 NPU 上で Stable Diffusion による画像生成を実行できます。\n\nお使いのチップが以下に記載されていない場合、CPU/GPU のみで実行されます。\n対応している NPU 一覧:\n\n- Snapdragon 8 Gen 1\n- Snapdragon 8 Gen 2\n- Snapdragon 8 Gen 3\n- Snapdragon 8 Elite\n- Snapdragon 8 Elite Gen 5\n\nHexagon V68 アーキテクチャ以降の NPU については、実験的なサポートが提供されていますが、\nNPU 上での実行が必ずしも保証されるわけではありません。\n\nこの OSS 版は上流リポジトリを元に再制作しています:\nhttps://github.com/xororz/local-dream\n\nこの OSS リポジトリ:\nhttps://github.com/xingguangcuican6666/local-dream-oss</string>
     <string name="help">help</string>
     <string name="available_models">利用可能なモデル</string>
     <string name="selected_items">%d 選択</string>

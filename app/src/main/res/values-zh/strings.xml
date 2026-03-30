@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Local Dream</string>
+    <string name="app_name">Local Dream OSS</string>
 
     <!-- Models -->
     <string name="anythingv5_description">动漫图像生成模型</string>
@@ -30,7 +30,7 @@
     <string name="yes">是</string>
     <string name="no">否</string>
     <string name="about_app">须知</string>
-    <string name="must_read">此APP支持在CPU/GPU和部分高通NPU上运行stable diffusion图像生成。\n\n如您的芯片不是下列之一，则只能用CPU/GPU运行，支持的NPU列表:\n\n- 骁龙 8 Gen 1\n- 骁龙 8 Gen 2\n- 骁龙 8 Gen 3\n- 骁龙 8 Elite\n- 骁龙 8 Elite Gen 5\n\n对于具有 Hexagon V68 架构或更新 NPU 的高通芯片，提供实验性支持，但不保证能在 NPU 上运行。\n\n本项目在 https://github.com/xororz/local-dream 开源，可以在github上查看源代码或提交问题</string>
+    <string name="must_read">此APP支持在CPU/GPU和部分高通NPU上运行stable diffusion图像生成。\n\n如您的芯片不是下列之一，则只能用CPU/GPU运行，支持的NPU列表:\n\n- 骁龙 8 Gen 1\n- 骁龙 8 Gen 2\n- 骁龙 8 Gen 3\n- 骁龙 8 Elite\n- 骁龙 8 Elite Gen 5\n\n对于具有 Hexagon V68 架构或更新 NPU 的高通芯片，提供实验性支持，但不保证能在 NPU 上运行。\n\n本 OSS 版本基于源仓库二次制作：\nhttps://github.com/xororz/local-dream\n\n本仓库地址：\nhttps://github.com/xingguangcuican6666/local-dream-oss</string>
     <string name="help">help</string>
 
     <!-- Model List Screen -->
