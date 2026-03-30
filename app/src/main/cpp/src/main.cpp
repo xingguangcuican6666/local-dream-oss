@@ -56,6 +56,8 @@
 int port = 8081;
 std::string listen_address = "127.0.0.1";
 std::string local_api_model_id = "local-dream";
+int backend_runtime_width = 512;
+int backend_runtime_height = 512;
 bool ponyv55 = false;
 bool use_mnn = false;
 bool use_safety_checker = false;
@@ -601,6 +603,22 @@ void processCommandLine(int argc, char **argv) {
     if (sysStatus != dynamicloadutil::StatusCode::SUCCESS)
       showHelpAndExit("Failed get QNN system func ptrs.");
     return;
+  }
+  if (!patchPath.empty()) {
+    try {
+      auto stem = std::filesystem::path(patchPath).stem().string();
+      auto xPos = stem.find('x');
+      if (xPos != std::string::npos) {
+        backend_runtime_width = std::stoi(stem.substr(0, xPos));
+        backend_runtime_height = std::stoi(stem.substr(xPos + 1));
+      } else {
+        backend_runtime_width = std::stoi(stem);
+        backend_runtime_height = backend_runtime_width;
+      }
+    } catch (...) {
+      backend_runtime_width = 512;
+      backend_runtime_height = 512;
+    }
   }
   if (cvt_model) {
     if (!std::filesystem::exists(model_dir)) {
@@ -2436,6 +2454,15 @@ int main(int argc, char **argv) {
                    req_width = std::stoi(req_size.substr(0, sep_pos));
                    req_height = std::stoi(req_size.substr(sep_pos + 1));
                  }
+               }
+               if (req_width != backend_runtime_width ||
+                   req_height != backend_runtime_height) {
+                 throw std::invalid_argument(
+                     "Requested size " + std::to_string(req_width) + "x" +
+                     std::to_string(req_height) +
+                     " does not match current backend runtime resolution (" +
+                     std::to_string(backend_runtime_width) + "x" +
+                     std::to_string(backend_runtime_height) + ")");
                }
                output_width = req_width;
                output_height = req_height;

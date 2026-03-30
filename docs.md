@@ -116,6 +116,8 @@ curl -X POST "https://your-api.example.com/v1/images/generations" \
 >   }'
 > ```
 
+> 注意：本地后端是按当前启动的运行时分辨率工作的。`size` 必须与当前后端实际分辨率一致（常见为 `512x512`，或你当前 patch 对应的分辨率），否则会返回 400。
+
 ---
 
 ## 4. 错误返回建议
