@@ -158,6 +158,7 @@ jobs:
           set -euo pipefail
           KEYSTORE_PATH="${RUNNER_TEMP}/release-signing.jks"
           echo "${KEYSTORE_BASE64}" | base64 -d > "${KEYSTORE_PATH}"
+          mkdir -p "${HOME}/.gradle"
           {
             echo "RELEASE_STORE_FILE=${KEYSTORE_PATH}"
             echo "RELEASE_STORE_PASSWORD=${STORE_PASSWORD}"
