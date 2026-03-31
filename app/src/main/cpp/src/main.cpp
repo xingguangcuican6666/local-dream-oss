@@ -2507,6 +2507,21 @@ int main(int argc, char **argv) {
     }
   };
 
+  auto has_form_field = [](const httplib::Request &req, const std::string &key) {
+    return req.has_param(key) || req.has_file(key);
+  };
+
+  auto get_form_field_value_or_throw = [](const httplib::Request &req,
+                                          const std::string &key) {
+    if (req.has_param(key)) {
+      return req.get_param_value(key);
+    }
+    if (req.has_file(key)) {
+      return req.get_file_value(key).content;
+    }
+    throw std::invalid_argument("Missing form field '" + key + "'");
+  };
+
   auto decode_request_image_or_throw = [&](const std::string &image_binary) {
     std::vector<uint8_t> dec_buf(image_binary.begin(), image_binary.end());
     std::vector<uint8_t> dec_pix;
@@ -2626,15 +2641,10 @@ int main(int argc, char **argv) {
                if (image_file.content.empty()) {
                  throw std::invalid_argument("'image' is empty");
                }
-               if (!req.has_param("prompt")) {
-                 throw std::invalid_argument("Missing form field 'prompt'");
-               }
-
-               prompt = req.get_param_value("prompt");
-               negative_prompt =
-                   req.has_param("negative_prompt")
-                       ? req.get_param_value("negative_prompt")
-                       : "";
+                prompt = get_form_field_value_or_throw(req, "prompt");
+                negative_prompt = has_form_field(req, "negative_prompt")
+                                      ? get_form_field_value_or_throw(req, "negative_prompt")
+                                      : "";
                 steps = parse_int_param_or_default(req, "steps", 20);
                 cfg = parse_float_param_or_default(req, "cfg", 7.5f);
                scheduler_type =
