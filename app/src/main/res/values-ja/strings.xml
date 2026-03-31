@@ -265,6 +265,10 @@
     <string name="theme_settings_hint">Monet の動的カラー、または独自パレットを選択できます。</string>
     <string name="theme_dynamic_color">Monet 動的カラーを使用</string>
     <string name="theme_dynamic_color_hint">Android 12+ では壁紙から自動的に配色を抽出します。</string>
+    <string name="theme_app_mode">アプリ外観</string>
+    <string name="theme_mode_system">システムに従う</string>
+    <string name="theme_mode_light">ライト</string>
+    <string name="theme_mode_dark">ダーク</string>
     <string name="theme_custom_palette">カスタムパレット</string>
     <string name="theme_color_input_hint">6 桁または 8 桁の HEX カラーを入力してください（例: FF6650A4 / 6650A4）。</string>
     <string name="theme_accent_color">アクセントカラー（HEX）</string>

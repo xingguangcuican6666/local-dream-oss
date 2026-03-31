@@ -8,6 +8,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -126,6 +127,9 @@ class MainActivity : ComponentActivity() {
             var dynamicColorEnabled by remember {
                 mutableStateOf(prefs.getBoolean("theme_dynamic_color", true))
             }
+            var themeMode by remember {
+                mutableStateOf(prefs.getString("theme_mode", "system") ?: "system")
+            }
             var themeAccentColor by remember {
                 mutableIntStateOf(
                     prefs.getInt("theme_accent_color", DefaultThemeAccentArgb)
@@ -139,6 +143,10 @@ class MainActivity : ComponentActivity() {
                     when (key) {
                         "theme_dynamic_color" -> {
                             dynamicColorEnabled = sharedPrefs.getBoolean("theme_dynamic_color", true)
+                        }
+
+                        "theme_mode" -> {
+                            themeMode = sharedPrefs.getString("theme_mode", "system") ?: "system"
                         }
 
                         "theme_accent_color" -> {
@@ -156,6 +164,11 @@ class MainActivity : ComponentActivity() {
             }
 
             LocalDreamTheme(
+                darkTheme = when (themeMode) {
+                    "light" -> false
+                    "dark" -> true
+                    else -> isSystemInDarkTheme()
+                },
                 dynamicColor = dynamicColorEnabled,
                 customAccentColor = if (dynamicColorEnabled) null else Color(themeAccentColor),
                 customBackgroundColor = if (dynamicColorEnabled) null else Color(themeBackgroundColor)

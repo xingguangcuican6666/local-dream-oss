@@ -36,6 +36,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.res.stringResource
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -1485,6 +1486,9 @@ fun ModelListScreen(
                             var dynamicColorEnabled by remember {
                                 mutableStateOf(localApiPrefs.getBoolean("theme_dynamic_color", true))
                             }
+                            var themeMode by remember {
+                                mutableStateOf(localApiPrefs.getString("theme_mode", "system") ?: "system")
+                            }
                             var accentColorText by remember {
                                 val accent = localApiPrefs.getInt(
                                     "theme_accent_color",
@@ -1499,13 +1503,17 @@ fun ModelListScreen(
                                 )
                                 mutableStateOf(String.format("%08X", bg))
                             }
-                            val parseThemeColor = { input: String ->
-                                val raw = input.removePrefix("#").uppercase()
-                                val normalized = if (raw.length == 6) "FF$raw" else raw
-                                if (normalized.length != 8) {
-                                    null
-                                } else {
-                                    normalized.toUIntOrNull(16)?.toInt()
+                            val currentPrimaryArgb = MaterialTheme.colorScheme.primary.toArgb()
+                            val currentBackgroundArgb = MaterialTheme.colorScheme.background.toArgb()
+                            val parseThemeColor: (String) -> Int? = remember {
+                                { input ->
+                                    val raw = input.removePrefix("#").uppercase()
+                                    val normalized = if (raw.length == 6) "FF$raw" else raw
+                                    if (normalized.length != 8) {
+                                        null
+                                    } else {
+                                        normalized.toUIntOrNull(16)?.toInt()
+                                    }
                                 }
                             }
 
@@ -1536,9 +1544,72 @@ fun ModelListScreen(
                                         Switch(
                                             checked = dynamicColorEnabled,
                                             onCheckedChange = {
-                                                dynamicColorEnabled = it
-                                                localApiPrefs.edit { putBoolean("theme_dynamic_color", it) }
+                                                if (!it) {
+                                                    val hasSavedCustomColors =
+                                                        localApiPrefs.contains("theme_accent_color") &&
+                                                            localApiPrefs.contains("theme_background_color")
+                                                    val accentColor = if (hasSavedCustomColors) {
+                                                        localApiPrefs.getInt("theme_accent_color", DefaultThemeAccentArgb)
+                                                    } else {
+                                                        currentPrimaryArgb
+                                                    }
+                                                    val backgroundColor = if (hasSavedCustomColors) {
+                                                        localApiPrefs.getInt("theme_background_color", DefaultThemeBackgroundArgb)
+                                                    } else {
+                                                        currentBackgroundArgb
+                                                    }
+                                                    accentColorText = String.format("%08X", accentColor)
+                                                    backgroundColorText = String.format("%08X", backgroundColor)
+                                                    localApiPrefs.edit {
+                                                        putInt("theme_accent_color", accentColor)
+                                                        putInt("theme_background_color", backgroundColor)
+                                                        putBoolean("theme_dynamic_color", false)
+                                                    }
+                                                    dynamicColorEnabled = false
+                                                } else {
+                                                    dynamicColorEnabled = true
+                                                    localApiPrefs.edit { putBoolean("theme_dynamic_color", true) }
+                                                }
                                             }
+                                        )
+                                    }
+                                    HorizontalDivider(
+                                        modifier = Modifier.padding(vertical = 12.dp),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f)
+                                    )
+                                    Text(
+                                        text = stringResource(R.string.theme_app_mode),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Medium,
+                                        modifier = Modifier.padding(bottom = 8.dp)
+                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        FilterChip(
+                                            selected = themeMode == "system",
+                                            onClick = {
+                                                themeMode = "system"
+                                                localApiPrefs.edit { putString("theme_mode", "system") }
+                                            },
+                                            label = { Text(stringResource(R.string.theme_mode_system)) }
+                                        )
+                                        FilterChip(
+                                            selected = themeMode == "light",
+                                            onClick = {
+                                                themeMode = "light"
+                                                localApiPrefs.edit { putString("theme_mode", "light") }
+                                            },
+                                            label = { Text(stringResource(R.string.theme_mode_light)) }
+                                        )
+                                        FilterChip(
+                                            selected = themeMode == "dark",
+                                            onClick = {
+                                                themeMode = "dark"
+                                                localApiPrefs.edit { putString("theme_mode", "dark") }
+                                            },
+                                            label = { Text(stringResource(R.string.theme_mode_dark)) }
                                         )
                                     }
                                     if (!dynamicColorEnabled) {
