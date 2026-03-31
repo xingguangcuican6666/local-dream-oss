@@ -2522,6 +2522,38 @@ int main(int argc, char **argv) {
     throw std::invalid_argument("Missing form field '" + key + "'");
   };
 
+  auto parse_int_form_field_or_default = [&](const httplib::Request &req,
+                                             const std::string &key, int default_value) {
+    if (!has_form_field(req, key)) return default_value;
+    try {
+      return std::stoi(get_form_field_value_or_throw(req, key));
+    } catch (const std::exception &) {
+      throw std::invalid_argument("Invalid numeric field '" + key + "'");
+    }
+  };
+
+  auto parse_float_form_field_or_default = [&](const httplib::Request &req,
+                                               const std::string &key,
+                                               float default_value) {
+    if (!has_form_field(req, key)) return default_value;
+    try {
+      return std::stof(get_form_field_value_or_throw(req, key));
+    } catch (const std::exception &) {
+      throw std::invalid_argument("Invalid numeric field '" + key + "'");
+    }
+  };
+
+  auto parse_unsigned_form_field_or_default = [&](const httplib::Request &req,
+                                                  const std::string &key,
+                                                  unsigned default_value) {
+    if (!has_form_field(req, key)) return default_value;
+    try {
+      return static_cast<unsigned>(std::stoul(get_form_field_value_or_throw(req, key)));
+    } catch (const std::exception &) {
+      throw std::invalid_argument("Invalid numeric field '" + key + "'");
+    }
+  };
+
   auto decode_request_image_or_throw = [&](const std::string &image_binary) {
     std::vector<uint8_t> dec_buf(image_binary.begin(), image_binary.end());
     std::vector<uint8_t> dec_pix;
@@ -2645,30 +2677,33 @@ int main(int argc, char **argv) {
                 negative_prompt = has_form_field(req, "negative_prompt")
                                       ? get_form_field_value_or_throw(req, "negative_prompt")
                                       : "";
-                steps = parse_int_param_or_default(req, "steps", 20);
-                cfg = parse_float_param_or_default(req, "cfg", 7.5f);
-               scheduler_type =
-                   req.has_param("scheduler") ? req.get_param_value("scheduler") : "dpm";
-               use_opencl = req.has_param("use_opencl") &&
-                            (req.get_param_value("use_opencl") == "true" ||
-                             req.get_param_value("use_opencl") == "1");
+                steps = parse_int_form_field_or_default(req, "steps", 20);
+                cfg = parse_float_form_field_or_default(req, "cfg", 7.5f);
+               scheduler_type = has_form_field(req, "scheduler")
+                                    ? get_form_field_value_or_throw(req, "scheduler")
+                                    : "dpm";
+               use_opencl = has_form_field(req, "use_opencl") &&
+                            (get_form_field_value_or_throw(req, "use_opencl") == "true" ||
+                             get_form_field_value_or_throw(req, "use_opencl") == "1");
                show_diffusion_process = false;
                show_diffusion_stride = 1;
-                seed = parse_unsigned_param_or_default(
+                seed = parse_unsigned_form_field_or_default(
                     req, "seed",
                     static_cast<unsigned>(hashSeed(
                         std::chrono::system_clock::now().time_since_epoch().count())));
-                denoise_strength = parse_float_param_or_default(req, "denoise_strength", 0.6f);
-               denoise_strength = apply_input_fidelity_if_present(
-                   [&](const std::string &key) { return req.has_param(key); },
-                   [&](const std::string &key) { return req.get_param_value(key); },
-                   denoise_strength);
+                denoise_strength =
+                    parse_float_form_field_or_default(req, "denoise_strength", 0.6f);
+                denoise_strength = apply_input_fidelity_if_present(
+                    [&](const std::string &key) { return has_form_field(req, key); },
+                    [&](const std::string &key) { return get_form_field_value_or_throw(req, key); },
+                    denoise_strength);
                reset_request_image_state();
 
-               int req_width = 1024;
-               int req_height = 1024;
-               if (req.has_param("size")) {
-                 parse_size_or_throw(req.get_param_value("size"), req_width, req_height);
+               int req_width = backend_runtime_width;
+               int req_height = backend_runtime_height;
+               if (has_form_field(req, "size")) {
+                 parse_size_or_throw(get_form_field_value_or_throw(req, "size"), req_width,
+                                     req_height);
                }
                setup_image_request_runtime(req_width, req_height);
 
@@ -2686,7 +2721,7 @@ int main(int argc, char **argv) {
                  throw std::invalid_argument("Err proc img/mask: " + std::string(e.what()));
                }
 
-                int n = parse_int_param_or_default(req, "n", 1);
+                int n = parse_int_form_field_or_default(req, "n", 1);
                nlohmann::json payload = build_openai_images_response(n, prompt);
                res.status = 200;
                res.set_content(payload.dump(), "application/json");
@@ -2722,32 +2757,37 @@ int main(int argc, char **argv) {
                  throw std::invalid_argument("'image' is empty");
                }
 
-               prompt = req.has_param("prompt") ? req.get_param_value("prompt") : "";
-               negative_prompt = "";
-                steps = parse_int_param_or_default(req, "steps", 20);
-                cfg = parse_float_param_or_default(req, "cfg", 7.5f);
-               scheduler_type =
-                   req.has_param("scheduler") ? req.get_param_value("scheduler") : "dpm";
-               use_opencl = req.has_param("use_opencl") &&
-                            (req.get_param_value("use_opencl") == "true" ||
-                             req.get_param_value("use_opencl") == "1");
+               prompt =
+                   has_form_field(req, "prompt") ? get_form_field_value_or_throw(req, "prompt")
+                                                 : "";
+                negative_prompt = "";
+                steps = parse_int_form_field_or_default(req, "steps", 20);
+                cfg = parse_float_form_field_or_default(req, "cfg", 7.5f);
+               scheduler_type = has_form_field(req, "scheduler")
+                                    ? get_form_field_value_or_throw(req, "scheduler")
+                                    : "dpm";
+               use_opencl = has_form_field(req, "use_opencl") &&
+                            (get_form_field_value_or_throw(req, "use_opencl") == "true" ||
+                             get_form_field_value_or_throw(req, "use_opencl") == "1");
                show_diffusion_process = false;
                show_diffusion_stride = 1;
-                seed = parse_unsigned_param_or_default(
+                seed = parse_unsigned_form_field_or_default(
                     req, "seed",
                     static_cast<unsigned>(hashSeed(
                         std::chrono::system_clock::now().time_since_epoch().count())));
-                denoise_strength = parse_float_param_or_default(req, "denoise_strength", 0.8f);
-               denoise_strength = apply_input_fidelity_if_present(
-                   [&](const std::string &key) { return req.has_param(key); },
-                   [&](const std::string &key) { return req.get_param_value(key); },
-                   denoise_strength);
+                denoise_strength =
+                    parse_float_form_field_or_default(req, "denoise_strength", 0.8f);
+                denoise_strength = apply_input_fidelity_if_present(
+                    [&](const std::string &key) { return has_form_field(req, key); },
+                    [&](const std::string &key) { return get_form_field_value_or_throw(req, key); },
+                    denoise_strength);
                reset_request_image_state();
 
-               int req_width = 1024;
-               int req_height = 1024;
-               if (req.has_param("size")) {
-                 parse_size_or_throw(req.get_param_value("size"), req_width, req_height);
+               int req_width = backend_runtime_width;
+               int req_height = backend_runtime_height;
+               if (has_form_field(req, "size")) {
+                 parse_size_or_throw(get_form_field_value_or_throw(req, "size"), req_width,
+                                     req_height);
                }
                setup_image_request_runtime(req_width, req_height);
 
@@ -2758,7 +2798,7 @@ int main(int argc, char **argv) {
                  throw std::invalid_argument("Err proc image: " + std::string(e.what()));
                }
 
-                int n = parse_int_param_or_default(req, "n", 1);
+                int n = parse_int_form_field_or_default(req, "n", 1);
                nlohmann::json payload = build_openai_images_response(n, prompt);
                res.status = 200;
                res.set_content(payload.dump(), "application/json");

@@ -137,6 +137,8 @@ curl -X POST "https://your-api.example.com/v1/images/generations" \
 - 必填文本：`prompt`
 - 可选文本：`n`、`size`、`seed`、`steps`、`cfg`、`scheduler`、`denoise_strength`、`input_fidelity`
 
+> 若未传 `size`，默认使用当前后端运行时分辨率（即当前已加载模型/运行时的分辨率），不会强制回落为固定 `1024x1024`。
+
 > `input_fidelity` 取值应在 `[0,1]`，会映射为内部去噪强度（`denoise_strength = 1 - input_fidelity`，并限制在 `[0,1]`）。
 
 ### cURL 示例
@@ -174,6 +176,8 @@ curl -X POST "http://127.0.0.1:8081/v1/images/edits" \
 
 - 必填文件：`image`
 - 可选文本：`prompt`、`n`、`size`、`seed`、`steps`、`cfg`、`scheduler`、`denoise_strength`、`input_fidelity`
+
+> 若未传 `size`，默认使用当前后端运行时分辨率（即当前已加载模型/运行时的分辨率），不会强制回落为固定 `1024x1024`。
 
 > 变体接口默认 `denoise_strength=0.8`（比 edits 默认值更高），用于更明显的风格/细节变化；如需更保真可显式传更低值，或传 `input_fidelity` 覆盖。
 
