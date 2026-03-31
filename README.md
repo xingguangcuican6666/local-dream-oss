@@ -13,6 +13,8 @@ _Also supports CPU/GPU inference_
 
 **Local Dream OSS** is an open-source Android app for on-device Stable Diffusion image generation. The OSS version is **completely free** and adds developer-oriented features such as a built-in OpenAI-compatible local API server.
 
+Source Repo: [xororz/local-dream](https://github.com/xororz/local-dream)
+
 ## 🆕 OSS-Exclusive Features
 
 ### 🔌 OpenAI-Compatible Local API Server
