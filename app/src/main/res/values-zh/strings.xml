@@ -291,4 +291,16 @@
     <string name="enable_local_api_model_hint">关闭后，已安装模型的一键配置将不可用。</string>
     <string name="local_api_disabled_hint">本地 API 一键配置已关闭，请先在设置中开启。</string>
     <string name="local_api_quick_setup_done">本地 API 已配置并重启后端。</string>
+    <string name="theme_settings">主题设置</string>
+    <string name="theme_settings_hint">可使用莫奈动态取色，或自定义自己的调色盘。</string>
+    <string name="theme_dynamic_color">使用莫奈动态取色</string>
+    <string name="theme_dynamic_color_hint">Android 12+ 会从壁纸中自动提取配色。</string>
+    <string name="theme_app_mode">应用外观</string>
+    <string name="theme_mode_system">跟随系统</string>
+    <string name="theme_mode_light">浅色</string>
+    <string name="theme_mode_dark">深色</string>
+    <string name="theme_custom_palette">自定义调色盘</string>
+    <string name="theme_color_input_hint">请输入 6 位或 8 位 HEX 颜色（例如 FF6650A4 或 6650A4）。</string>
+    <string name="theme_accent_color">强调色（HEX）</string>
+    <string name="theme_background_color">背景色（HEX）</string>
 </resources>

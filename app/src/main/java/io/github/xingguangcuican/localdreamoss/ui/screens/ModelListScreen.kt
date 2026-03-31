@@ -35,6 +35,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.res.stringResource
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -47,6 +49,8 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.foundation.text.ClickableText
 import androidx.compose.ui.text.style.TextDecoration
 import io.github.xingguangcuican.localdreamoss.R
+import io.github.xingguangcuican.localdreamoss.ui.theme.DefaultThemeAccentArgb
+import io.github.xingguangcuican.localdreamoss.ui.theme.DefaultThemeBackgroundArgb
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -1451,6 +1455,242 @@ fun ModelListScreen(
                             }
                         }
                     }
+
+                    // Theme settings section
+                    item {
+                        Column {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.padding(bottom = 12.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Palette,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Text(
+                                    stringResource(R.string.theme_settings),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                            Text(
+                                stringResource(R.string.theme_settings_hint),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                                modifier = Modifier.padding(bottom = 12.dp)
+                            )
+
+                            var dynamicColorEnabled by remember {
+                                mutableStateOf(localApiPrefs.getBoolean("theme_dynamic_color", true))
+                            }
+                            var themeMode by remember {
+                                mutableStateOf(localApiPrefs.getString("theme_mode", "system") ?: "system")
+                            }
+                            var accentColorText by remember {
+                                val accent = localApiPrefs.getInt(
+                                    "theme_accent_color",
+                                    DefaultThemeAccentArgb
+                                )
+                                mutableStateOf(String.format("%08X", accent))
+                            }
+                            var backgroundColorText by remember {
+                                val bg = localApiPrefs.getInt(
+                                    "theme_background_color",
+                                    DefaultThemeBackgroundArgb
+                                )
+                                mutableStateOf(String.format("%08X", bg))
+                            }
+                            val currentPrimaryArgb = MaterialTheme.colorScheme.primary.toArgb()
+                            val currentBackgroundArgb = MaterialTheme.colorScheme.background.toArgb()
+                            val parseThemeColor: (String) -> Int? = remember {
+                                { input ->
+                                    val raw = input.removePrefix("#").uppercase()
+                                    val normalized = if (raw.length == 6) "FF$raw" else raw
+                                    if (normalized.length != 8) {
+                                        null
+                                    } else {
+                                        normalized.toUIntOrNull(16)?.toInt()
+                                    }
+                                }
+                            }
+
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                                )
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = stringResource(R.string.theme_dynamic_color),
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                            Text(
+                                                text = stringResource(R.string.theme_dynamic_color_hint),
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                                            )
+                                        }
+                                        Switch(
+                                            checked = dynamicColorEnabled,
+                                            onCheckedChange = {
+                                                if (!it) {
+                                                    val hasSavedCustomColors =
+                                                        localApiPrefs.contains("theme_accent_color") &&
+                                                            localApiPrefs.contains("theme_background_color")
+                                                    val accentColor = if (hasSavedCustomColors) {
+                                                        localApiPrefs.getInt("theme_accent_color", DefaultThemeAccentArgb)
+                                                    } else {
+                                                        currentPrimaryArgb
+                                                    }
+                                                    val backgroundColor = if (hasSavedCustomColors) {
+                                                        localApiPrefs.getInt("theme_background_color", DefaultThemeBackgroundArgb)
+                                                    } else {
+                                                        currentBackgroundArgb
+                                                    }
+                                                    accentColorText = String.format("%08X", accentColor)
+                                                    backgroundColorText = String.format("%08X", backgroundColor)
+                                                    localApiPrefs.edit {
+                                                        putInt("theme_accent_color", accentColor)
+                                                        putInt("theme_background_color", backgroundColor)
+                                                        putBoolean("theme_dynamic_color", false)
+                                                    }
+                                                    dynamicColorEnabled = false
+                                                } else {
+                                                    dynamicColorEnabled = true
+                                                    localApiPrefs.edit { putBoolean("theme_dynamic_color", true) }
+                                                }
+                                            }
+                                        )
+                                    }
+                                    HorizontalDivider(
+                                        modifier = Modifier.padding(vertical = 12.dp),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f)
+                                    )
+                                    Text(
+                                        text = stringResource(R.string.theme_app_mode),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Medium,
+                                        modifier = Modifier.padding(bottom = 8.dp)
+                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        FilterChip(
+                                            selected = themeMode == "system",
+                                            onClick = {
+                                                themeMode = "system"
+                                                localApiPrefs.edit { putString("theme_mode", "system") }
+                                            },
+                                            label = { Text(stringResource(R.string.theme_mode_system)) }
+                                        )
+                                        FilterChip(
+                                            selected = themeMode == "light",
+                                            onClick = {
+                                                themeMode = "light"
+                                                localApiPrefs.edit { putString("theme_mode", "light") }
+                                            },
+                                            label = { Text(stringResource(R.string.theme_mode_light)) }
+                                        )
+                                        FilterChip(
+                                            selected = themeMode == "dark",
+                                            onClick = {
+                                                themeMode = "dark"
+                                                localApiPrefs.edit { putString("theme_mode", "dark") }
+                                            },
+                                            label = { Text(stringResource(R.string.theme_mode_dark)) }
+                                        )
+                                    }
+                                    if (!dynamicColorEnabled) {
+                                        HorizontalDivider(
+                                            modifier = Modifier.padding(vertical = 12.dp),
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f)
+                                        )
+                                        Text(
+                                            text = stringResource(R.string.theme_custom_palette),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Medium,
+                                            modifier = Modifier.padding(bottom = 8.dp)
+                                        )
+                                        Text(
+                                            text = stringResource(R.string.theme_color_input_hint),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                                            modifier = Modifier.padding(bottom = 8.dp)
+                                        )
+                                        OutlinedTextField(
+                                            value = accentColorText,
+                                            onValueChange = { raw ->
+                                                val filtered = raw.filter { it.isDigit() || it in 'a'..'f' || it in 'A'..'F' }
+                                                    .take(8)
+                                                    .uppercase()
+                                                accentColorText = filtered
+                                                parseThemeColor(filtered)?.let { colorValue ->
+                                                    localApiPrefs.edit {
+                                                        putInt("theme_accent_color", colorValue)
+                                                    }
+                                                }
+                                            },
+                                            label = { Text(stringResource(R.string.theme_accent_color)) },
+                                            placeholder = { Text("FF6650A4") },
+                                            singleLine = true,
+                                            modifier = Modifier.fillMaxWidth(),
+                                            trailingIcon = {
+                                                parseThemeColor(accentColorText)?.let { colorValue ->
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(20.dp)
+                                                            .clip(CircleShape)
+                                                            .background(Color(colorValue))
+                                                    )
+                                                }
+                                            }
+                                        )
+                                        Spacer(modifier = Modifier.height(12.dp))
+                                        OutlinedTextField(
+                                            value = backgroundColorText,
+                                            onValueChange = { raw ->
+                                                val filtered = raw.filter { it.isDigit() || it in 'a'..'f' || it in 'A'..'F' }
+                                                    .take(8)
+                                                    .uppercase()
+                                                backgroundColorText = filtered
+                                                parseThemeColor(filtered)?.let { colorValue ->
+                                                    localApiPrefs.edit {
+                                                        putInt("theme_background_color", colorValue)
+                                                    }
+                                                }
+                                            },
+                                            label = { Text(stringResource(R.string.theme_background_color)) },
+                                            placeholder = { Text("FFFFFBFE") },
+                                            singleLine = true,
+                                            modifier = Modifier.fillMaxWidth(),
+                                            trailingIcon = {
+                                                parseThemeColor(backgroundColorText)?.let { colorValue ->
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(20.dp)
+                                                            .clip(CircleShape)
+                                                            .background(Color(colorValue))
+                                                    )
+                                                }
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
                     // Embedding management section
                     item {
                         Column {
@@ -1909,6 +2149,7 @@ fun ModelCard(
                             }
                         }
                     }
+
                 }
             }
         }

@@ -2408,6 +2408,195 @@ int main(int argc, char **argv) {
 
   // --- HTTP Server ---
   httplib::Server svr;
+  auto parse_size_or_throw = [](const std::string &size, int &req_width,
+                                int &req_height) {
+    auto sep_pos = size.find('x');
+    if (sep_pos == std::string::npos) {
+      throw std::invalid_argument("Invalid 'size' format, expected WIDTHxHEIGHT");
+    }
+    req_width = std::stoi(size.substr(0, sep_pos));
+    req_height = std::stoi(size.substr(sep_pos + 1));
+    if (req_width <= 0 || req_height <= 0) {
+      throw std::invalid_argument("Invalid 'size' value");
+    }
+  };
+
+  auto setup_image_request_runtime = [&](int req_width, int req_height) {
+    if (req_width != backend_runtime_width || req_height != backend_runtime_height) {
+      throw std::invalid_argument(
+          "Requested size " + std::to_string(req_width) + "x" +
+          std::to_string(req_height) +
+          " does not match current backend runtime resolution (" +
+          std::to_string(backend_runtime_width) + "x" +
+          std::to_string(backend_runtime_height) + ")");
+    }
+    output_width = req_width;
+    output_height = req_height;
+    sample_width = req_width / 8;
+    sample_height = req_height / 8;
+  };
+
+  auto reset_request_image_state = [&]() {
+    request_img2img = false;
+    request_has_mask = false;
+    img_data.clear();
+    mask_data.clear();
+    mask_data_full.clear();
+  };
+
+  auto build_openai_images_response = [&](int n_images,
+                                          const std::string &revised_prompt) {
+    n_images = std::clamp(n_images, 1, 4);
+    nlohmann::json data = nlohmann::json::array();
+    for (int i = 0; i < n_images; ++i) {
+      auto result = generateImage([](int, int, const std::string &) { return; });
+      std::vector<uint8_t> output_jpeg =
+          encodeJPEG(result.image_data, result.width, result.height, 95);
+      std::string encoded =
+          base64_encode(std::string(output_jpeg.begin(), output_jpeg.end()));
+      data.push_back({{"b64_json", encoded}, {"revised_prompt", revised_prompt}});
+      seed = hashSeed(seed + i + 1);
+    }
+    return nlohmann::json{{"created", std::time(nullptr)}, {"data", data}};
+  };
+
+  auto apply_input_fidelity_if_present = [&](std::function<bool(const std::string &)> has_param,
+                                             std::function<std::string(const std::string &)> get_param,
+                                             float current_denoise_strength) {
+    if (!has_param("input_fidelity")) {
+      return current_denoise_strength;
+    }
+    float fidelity = 0.0f;
+    try {
+      fidelity = std::stof(get_param("input_fidelity"));
+    } catch (const std::exception &) {
+      throw std::invalid_argument("Invalid numeric field 'input_fidelity'");
+    }
+    fidelity = std::clamp(fidelity, 0.0f, 1.0f);
+    return 1.0f - fidelity;
+  };
+
+  auto parse_int_param_or_default = [](const httplib::Request &req,
+                                       const std::string &key, int default_value) {
+    if (!req.has_param(key)) return default_value;
+    try {
+      return std::stoi(req.get_param_value(key));
+    } catch (const std::exception &) {
+      throw std::invalid_argument("Invalid numeric field '" + key + "'");
+    }
+  };
+
+  auto parse_float_param_or_default = [](const httplib::Request &req,
+                                         const std::string &key, float default_value) {
+    if (!req.has_param(key)) return default_value;
+    try {
+      return std::stof(req.get_param_value(key));
+    } catch (const std::exception &) {
+      throw std::invalid_argument("Invalid numeric field '" + key + "'");
+    }
+  };
+
+  auto parse_unsigned_param_or_default = [](const httplib::Request &req,
+                                            const std::string &key,
+                                            unsigned default_value) {
+    if (!req.has_param(key)) return default_value;
+    try {
+      return static_cast<unsigned>(std::stoul(req.get_param_value(key)));
+    } catch (const std::exception &) {
+      throw std::invalid_argument("Invalid numeric field '" + key + "'");
+    }
+  };
+
+  auto has_form_field = [](const httplib::Request &req, const std::string &key) {
+    return req.has_param(key) || req.has_file(key);
+  };
+
+  auto get_form_field_value_or_throw = [](const httplib::Request &req,
+                                          const std::string &key) {
+    if (req.has_param(key)) {
+      return req.get_param_value(key);
+    }
+    if (req.has_file(key)) {
+      return req.get_file_value(key).content;
+    }
+    throw std::invalid_argument("Missing form field '" + key + "'");
+  };
+
+  auto parse_int_form_field_or_default = [&](const httplib::Request &req,
+                                             const std::string &key, int default_value) {
+    if (!has_form_field(req, key)) return default_value;
+    try {
+      return std::stoi(get_form_field_value_or_throw(req, key));
+    } catch (const std::exception &) {
+      throw std::invalid_argument("Invalid numeric field '" + key + "'");
+    }
+  };
+
+  auto parse_float_form_field_or_default = [&](const httplib::Request &req,
+                                               const std::string &key,
+                                               float default_value) {
+    if (!has_form_field(req, key)) return default_value;
+    try {
+      return std::stof(get_form_field_value_or_throw(req, key));
+    } catch (const std::exception &) {
+      throw std::invalid_argument("Invalid numeric field '" + key + "'");
+    }
+  };
+
+  auto parse_unsigned_form_field_or_default = [&](const httplib::Request &req,
+                                                  const std::string &key,
+                                                  unsigned default_value) {
+    if (!has_form_field(req, key)) return default_value;
+    try {
+      return static_cast<unsigned>(std::stoul(get_form_field_value_or_throw(req, key)));
+    } catch (const std::exception &) {
+      throw std::invalid_argument("Invalid numeric field '" + key + "'");
+    }
+  };
+
+  auto decode_request_image_or_throw = [&](const std::string &image_binary) {
+    std::vector<uint8_t> dec_buf(image_binary.begin(), image_binary.end());
+    std::vector<uint8_t> dec_pix;
+    decode_image(dec_buf, dec_pix, output_width, output_height);
+    if (dec_pix.size() != 3 * output_width * output_height) {
+      throw std::runtime_error("Img size mismatch");
+    }
+    std::vector<int> img_shape = {1, output_height, output_width, 3};
+    xt::xarray<uint8_t> xt_u8 = xt::adapt(dec_pix, img_shape);
+    xt::xarray<float> xt_f = xt::cast<float>(xt_u8);
+    xt_f = xt::eval(xt_f / 127.5f - 1.0f);
+    xt_f = xt::transpose(xt_f, {0, 3, 1, 2});
+    img_data.assign(xt_f.begin(), xt_f.end());
+  };
+
+  auto decode_request_mask_or_throw = [&](const std::string &mask_binary) {
+    std::vector<uint8_t> dec_mask_buf(mask_binary.begin(), mask_binary.end());
+    std::vector<uint8_t> mask_pix_lat_rgb, mask_pix_full_rgb;
+    decode_image(dec_mask_buf, mask_pix_lat_rgb, sample_width, sample_height);
+    decode_image(dec_mask_buf, mask_pix_full_rgb, output_width, output_height);
+    if (mask_pix_lat_rgb.empty() || mask_pix_full_rgb.empty()) {
+      throw std::runtime_error("Mask decode empty");
+    }
+
+    std::vector<int> mlat_shape = {sample_height, sample_width, 3};
+    xt::xarray<uint8_t> xmlat_u8 = xt::adapt(mask_pix_lat_rgb, mlat_shape);
+    xt::xarray<float> xmlat_f = xt::mean(xt::cast<float>(xmlat_u8), {2});
+    xmlat_f = xt::eval(xmlat_f / 255.0f);
+    xmlat_f = xt::reshape_view(xmlat_f, {1, 1, sample_height, sample_width});
+    xt::xarray<float> xmlat_f_4 =
+        xt::concatenate(xt::xtuple(xmlat_f, xmlat_f, xmlat_f, xmlat_f), 1);
+    mask_data.assign(xmlat_f_4.begin(), xmlat_f_4.end());
+
+    std::vector<int> mfull_shape = {output_height, output_width, 3};
+    xt::xarray<uint8_t> xmfull_u8 = xt::adapt(mask_pix_full_rgb, mfull_shape);
+    xt::xarray<float> xmfull_f = xt::mean(xt::cast<float>(xmfull_u8), {2});
+    xmfull_f = xt::eval(xmfull_f / 255.0f);
+    xmfull_f = xt::reshape_view(xmfull_f, {1, 1, output_height, output_width});
+    xt::xarray<float> xmfull_f_3 =
+        xt::concatenate(xt::xtuple(xmfull_f, xmfull_f, xmfull_f), 1);
+    mask_data_full.assign(xmfull_f_3.begin(), xmfull_f_3.end());
+  };
+
   svr.Get("/health", [](const httplib::Request &, httplib::Response &res) {
     res.status = 200;
   });
@@ -2429,65 +2618,31 @@ int main(int argc, char **argv) {
                negative_prompt = json.value("negative_prompt", "");
                steps = json.value("steps", 20);
                cfg = json.value("cfg", 7.5f);
-               scheduler_type = json.value("scheduler", "dpm");
-               use_opencl = json.value("use_opencl", false);
-               show_diffusion_process = false;
-               show_diffusion_stride = 1;
-               seed = json.value(
-                   "seed",
-                   (unsigned)hashSeed(std::chrono::system_clock::now()
-                                          .time_since_epoch()
-                                          .count()));
-               request_img2img = false;
-               request_has_mask = false;
-               img_data.clear();
-               mask_data.clear();
-               mask_data_full.clear();
-               denoise_strength = json.value("denoise_strength", 0.6f);
+                scheduler_type = json.value("scheduler", "dpm");
+                use_opencl = json.value("use_opencl", false);
+                show_diffusion_process = false;
+                show_diffusion_stride = 1;
+                seed = json.value(
+                    "seed",
+                    (unsigned)hashSeed(std::chrono::system_clock::now()
+                                           .time_since_epoch()
+                                           .count()));
+                reset_request_image_state();
+                denoise_strength = json.value("denoise_strength", 0.6f);
 
-               int req_width = 1024;
-               int req_height = 1024;
-               if (json.contains("size")) {
-                 std::string req_size = json["size"].get<std::string>();
-                 auto sep_pos = req_size.find('x');
-                 if (sep_pos != std::string::npos) {
-                   req_width = std::stoi(req_size.substr(0, sep_pos));
-                   req_height = std::stoi(req_size.substr(sep_pos + 1));
-                 }
-               }
-               if (req_width != backend_runtime_width ||
-                   req_height != backend_runtime_height) {
-                 throw std::invalid_argument(
-                     "Requested size " + std::to_string(req_width) + "x" +
-                     std::to_string(req_height) +
-                     " does not match current backend runtime resolution (" +
-                     std::to_string(backend_runtime_width) + "x" +
-                     std::to_string(backend_runtime_height) + ")");
-               }
-               output_width = req_width;
-               output_height = req_height;
-               sample_width = req_width / 8;
-               sample_height = req_height / 8;
+                int req_width = 1024;
+                int req_height = 1024;
+                if (json.contains("size")) {
+                  parse_size_or_throw(json["size"].get<std::string>(), req_width,
+                                      req_height);
+                }
+                setup_image_request_runtime(req_width, req_height);
 
-               int n = json.value("n", 1);
-               n = std::clamp(n, 1, 4);
-               nlohmann::json data = nlohmann::json::array();
-               for (int i = 0; i < n; ++i) {
-                 auto result = generateImage(
-                     [](int, int, const std::string &) { return; });
-                 std::vector<uint8_t> output_jpeg = encodeJPEG(
-                     result.image_data, result.width, result.height, 95);
-                 std::string encoded = base64_encode(
-                     std::string(output_jpeg.begin(), output_jpeg.end()));
-                 data.push_back({{"b64_json", encoded}});
-                 seed = hashSeed(seed + i + 1);
-               }
-
-               nlohmann::json payload = {{"created", std::time(nullptr)},
-                                         {"data", data}};
-               res.status = 200;
-               res.set_content(payload.dump(), "application/json");
-               res.set_header("Access-Control-Allow-Origin", "*");
+                int n = json.value("n", 1);
+                nlohmann::json payload = build_openai_images_response(n, prompt);
+                res.status = 200;
+                res.set_content(payload.dump(), "application/json");
+                res.set_header("Access-Control-Allow-Origin", "*");
              } catch (const nlohmann::json::parse_error &e) {
                nlohmann::json err = {
                    {"error",
@@ -2503,9 +2658,170 @@ int main(int argc, char **argv) {
                      {"type", "server_error"}}}};
                res.status = 500;
                res.set_content(err.dump(), "application/json");
+                res.set_header("Access-Control-Allow-Origin", "*");
+              }
+            });
+
+  // OpenAI-compatible image edits endpoint (multipart/form-data)
+  svr.Post("/v1/images/edits",
+           [&](const httplib::Request &req, httplib::Response &res) {
+             try {
+               if (!req.has_file("image")) {
+                 throw std::invalid_argument("Missing form file 'image'");
+               }
+               auto image_file = req.get_file_value("image");
+               if (image_file.content.empty()) {
+                 throw std::invalid_argument("'image' is empty");
+               }
+                prompt = get_form_field_value_or_throw(req, "prompt");
+                negative_prompt = has_form_field(req, "negative_prompt")
+                                      ? get_form_field_value_or_throw(req, "negative_prompt")
+                                      : "";
+                steps = parse_int_form_field_or_default(req, "steps", 20);
+                cfg = parse_float_form_field_or_default(req, "cfg", 7.5f);
+               scheduler_type = has_form_field(req, "scheduler")
+                                    ? get_form_field_value_or_throw(req, "scheduler")
+                                    : "dpm";
+               use_opencl = has_form_field(req, "use_opencl") &&
+                            (get_form_field_value_or_throw(req, "use_opencl") == "true" ||
+                             get_form_field_value_or_throw(req, "use_opencl") == "1");
+               show_diffusion_process = false;
+               show_diffusion_stride = 1;
+                seed = parse_unsigned_form_field_or_default(
+                    req, "seed",
+                    static_cast<unsigned>(hashSeed(
+                        std::chrono::system_clock::now().time_since_epoch().count())));
+                denoise_strength =
+                    parse_float_form_field_or_default(req, "denoise_strength", 0.6f);
+                denoise_strength = apply_input_fidelity_if_present(
+                    [&](const std::string &key) { return has_form_field(req, key); },
+                    [&](const std::string &key) { return get_form_field_value_or_throw(req, key); },
+                    denoise_strength);
+               reset_request_image_state();
+
+               int req_width = backend_runtime_width;
+               int req_height = backend_runtime_height;
+               if (has_form_field(req, "size")) {
+                 parse_size_or_throw(get_form_field_value_or_throw(req, "size"), req_width,
+                                     req_height);
+               }
+               setup_image_request_runtime(req_width, req_height);
+
+               request_img2img = true;
+               try {
+                 decode_request_image_or_throw(image_file.content);
+                 if (req.has_file("mask")) {
+                   auto mask_file = req.get_file_value("mask");
+                   if (!mask_file.content.empty()) {
+                     request_has_mask = true;
+                     decode_request_mask_or_throw(mask_file.content);
+                   }
+                 }
+               } catch (const std::exception &e) {
+                 throw std::invalid_argument("Err proc img/mask: " + std::string(e.what()));
+               }
+
+                int n = parse_int_form_field_or_default(req, "n", 1);
+               nlohmann::json payload = build_openai_images_response(n, prompt);
+               res.status = 200;
+               res.set_content(payload.dump(), "application/json");
+               res.set_header("Access-Control-Allow-Origin", "*");
+             } catch (const std::invalid_argument &e) {
+               nlohmann::json err = {
+                   {"error",
+                    {{"message", "Invalid Arg: " + std::string(e.what())},
+                     {"type", "request_error"}}}};
+               res.status = 400;
+               res.set_content(err.dump(), "application/json");
+               res.set_header("Access-Control-Allow-Origin", "*");
+             } catch (const std::exception &e) {
+               nlohmann::json err = {
+                   {"error",
+                    {{"message", "Server Err: " + std::string(e.what())},
+                     {"type", "server_error"}}}};
+               res.status = 500;
+               res.set_content(err.dump(), "application/json");
                res.set_header("Access-Control-Allow-Origin", "*");
              }
            });
+
+  // OpenAI-compatible image variations endpoint (multipart/form-data)
+  svr.Post("/v1/images/variations",
+           [&](const httplib::Request &req, httplib::Response &res) {
+             try {
+               if (!req.has_file("image")) {
+                 throw std::invalid_argument("Missing form file 'image'");
+               }
+               auto image_file = req.get_file_value("image");
+               if (image_file.content.empty()) {
+                 throw std::invalid_argument("'image' is empty");
+               }
+
+               prompt =
+                   has_form_field(req, "prompt") ? get_form_field_value_or_throw(req, "prompt")
+                                                 : "";
+                negative_prompt = "";
+                steps = parse_int_form_field_or_default(req, "steps", 20);
+                cfg = parse_float_form_field_or_default(req, "cfg", 7.5f);
+               scheduler_type = has_form_field(req, "scheduler")
+                                    ? get_form_field_value_or_throw(req, "scheduler")
+                                    : "dpm";
+               use_opencl = has_form_field(req, "use_opencl") &&
+                            (get_form_field_value_or_throw(req, "use_opencl") == "true" ||
+                             get_form_field_value_or_throw(req, "use_opencl") == "1");
+               show_diffusion_process = false;
+               show_diffusion_stride = 1;
+                seed = parse_unsigned_form_field_or_default(
+                    req, "seed",
+                    static_cast<unsigned>(hashSeed(
+                        std::chrono::system_clock::now().time_since_epoch().count())));
+                denoise_strength =
+                    parse_float_form_field_or_default(req, "denoise_strength", 0.8f);
+                denoise_strength = apply_input_fidelity_if_present(
+                    [&](const std::string &key) { return has_form_field(req, key); },
+                    [&](const std::string &key) { return get_form_field_value_or_throw(req, key); },
+                    denoise_strength);
+               reset_request_image_state();
+
+               int req_width = backend_runtime_width;
+               int req_height = backend_runtime_height;
+               if (has_form_field(req, "size")) {
+                 parse_size_or_throw(get_form_field_value_or_throw(req, "size"), req_width,
+                                     req_height);
+               }
+               setup_image_request_runtime(req_width, req_height);
+
+               request_img2img = true;
+               try {
+                 decode_request_image_or_throw(image_file.content);
+               } catch (const std::exception &e) {
+                 throw std::invalid_argument("Err proc image: " + std::string(e.what()));
+               }
+
+                int n = parse_int_form_field_or_default(req, "n", 1);
+               nlohmann::json payload = build_openai_images_response(n, prompt);
+               res.status = 200;
+               res.set_content(payload.dump(), "application/json");
+               res.set_header("Access-Control-Allow-Origin", "*");
+             } catch (const std::invalid_argument &e) {
+               nlohmann::json err = {
+                   {"error",
+                    {{"message", "Invalid Arg: " + std::string(e.what())},
+                     {"type", "request_error"}}}};
+               res.status = 400;
+               res.set_content(err.dump(), "application/json");
+               res.set_header("Access-Control-Allow-Origin", "*");
+             } catch (const std::exception &e) {
+               nlohmann::json err = {
+                   {"error",
+                    {{"message", "Server Err: " + std::string(e.what())},
+                     {"type", "server_error"}}}};
+               res.status = 500;
+               res.set_content(err.dump(), "application/json");
+               res.set_header("Access-Control-Allow-Origin", "*");
+             }
+           });
+
   svr.Post("/generate", [&](const httplib::Request &req,
                             httplib::Response &res) {
     try {

@@ -291,4 +291,16 @@
     <string name="enable_local_api_model_hint">When disabled, quick setup from installed models is blocked.</string>
     <string name="local_api_disabled_hint">Local API quick setup is disabled. Please enable it in Settings.</string>
     <string name="local_api_quick_setup_done">Local API configured and backend restarted.</string>
+    <string name="theme_settings">Theme Settings</string>
+    <string name="theme_settings_hint">Choose dynamic Monet color or customize your own palette.</string>
+    <string name="theme_dynamic_color">Use Monet dynamic color</string>
+    <string name="theme_dynamic_color_hint">Android 12+ extracts colors from wallpaper automatically.</string>
+    <string name="theme_app_mode">App appearance</string>
+    <string name="theme_mode_system">Follow system</string>
+    <string name="theme_mode_light">Light</string>
+    <string name="theme_mode_dark">Dark</string>
+    <string name="theme_custom_palette">Custom palette</string>
+    <string name="theme_color_input_hint">Enter 6 or 8 digit HEX color (e.g. FF6650A4 or 6650A4).</string>
+    <string name="theme_accent_color">Accent color (HEX)</string>
+    <string name="theme_background_color">Background color (HEX)</string>
 </resources>

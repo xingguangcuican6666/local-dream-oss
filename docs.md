@@ -8,10 +8,16 @@
 
 ## 1. 需要实现的接口
 
-根据当前代码实现，应用会调用以下两个接口：
+根据当前代码实现，应用会调用以下接口：
 
 1. `GET /v1/models`（用于拉取可选模型 ID）
 2. `POST /v1/images/generations`（用于图像生成）
+3. `POST /v1/images/edits`（用于图生图 / 局部重绘，OpenAI 标准）
+4. `POST /v1/images/variations`（用于变体生成，OpenAI 标准）
+
+另外本地服务还提供一个实用扩展：
+
+- `POST /upscale`（二进制 RGB 放大接口，**非 OpenAI 官方标准**）
 
 并且会带上鉴权头：
 
@@ -94,13 +100,15 @@ curl -X POST "https://your-api.example.com/v1/images/generations" \
 {
   "data": [
     {
-      "b64_json": "iVBORw0KGgoAAAANSUhEUgAA..."
+      "b64_json": "iVBORw0KGgoAAAANSUhEUgAA...",
+      "revised_prompt": "a cute cat in watercolor style"
     }
   ]
 }
 ```
 
-应用会读取 `data[].b64_json` 并解码成图片。
+应用会读取 `data[].b64_json` 并解码成图片，`revised_prompt` 为兼容 OpenAI 风格扩展字段。
+当前本地服务中 `revised_prompt` 会回显输入提示词（不做额外自动改写），用于保持字段级兼容。
 
 > 本地服务同样支持：
 >
@@ -120,7 +128,72 @@ curl -X POST "https://your-api.example.com/v1/images/generations" \
 
 ---
 
-## 4. 错误返回建议
+## 4. `POST /v1/images/edits`（图生图 / 局部重绘）
+
+该接口遵循 OpenAI Image API 风格，采用 `multipart/form-data`：
+
+- 必填文件：`image`
+- 可选文件：`mask`
+- 必填文本：`prompt`
+- 可选文本：`n`、`size`、`seed`、`steps`、`cfg`、`scheduler`、`denoise_strength`、`input_fidelity`
+
+> 若未传 `size`，默认使用当前后端运行时分辨率（即当前已加载模型/运行时的分辨率），不会强制回落为固定 `1024x1024`。
+
+> `input_fidelity` 取值应在 `[0,1]`，会映射为内部去噪强度（`denoise_strength = 1 - input_fidelity`，并限制在 `[0,1]`）。
+
+### cURL 示例
+
+```bash
+curl -X POST "http://127.0.0.1:8081/v1/images/edits" \
+  -H "Authorization: Bearer local" \
+  -F "image=@./input.png" \
+  -F "mask=@./mask.png" \
+  -F "prompt=a futuristic city at sunset" \
+  -F "n=1" \
+  -F "size=512x512" \
+  -F "input_fidelity=0.6"
+```
+
+### 期望响应（最小格式）
+
+```json
+{
+  "created": 1710000000,
+  "data": [
+    {
+      "b64_json": "iVBORw0KGgoAAAANSUhEUgAA...",
+      "revised_prompt": "a futuristic city at sunset"
+    }
+  ]
+}
+```
+
+---
+
+## 5. `POST /v1/images/variations`（变体生成）
+
+该接口同样使用 `multipart/form-data`：
+
+- 必填文件：`image`
+- 可选文本：`prompt`、`n`、`size`、`seed`、`steps`、`cfg`、`scheduler`、`denoise_strength`、`input_fidelity`
+
+> 若未传 `size`，默认使用当前后端运行时分辨率（即当前已加载模型/运行时的分辨率），不会强制回落为固定 `1024x1024`。
+
+> 变体接口默认 `denoise_strength=0.8`（比 edits 默认值更高），用于更明显的风格/细节变化；如需更保真可显式传更低值，或传 `input_fidelity` 覆盖。
+
+### cURL 示例
+
+```bash
+curl -X POST "http://127.0.0.1:8081/v1/images/variations" \
+  -H "Authorization: Bearer local" \
+  -F "image=@./input.png" \
+  -F "n=2" \
+  -F "size=512x512"
+```
+
+---
+
+## 6. 错误返回建议
 
 当接口失败时，建议返回 OpenAI 风格错误：
 
@@ -136,7 +209,7 @@ curl -X POST "https://your-api.example.com/v1/images/generations" \
 
 ---
 
-## 5. 在 Local Dream 里配置
+## 7. 在 Local Dream 里配置
 
 1. 打开应用，进入 **API 模型** 页面
 2. 填写：
@@ -157,9 +230,9 @@ curl -X POST "https://your-api.example.com/v1/images/generations" \
 
 ---
 
-## 6. 常见问题
+## 8. 常见问题
 
 - **401/403**：检查 `Authorization: Bearer` 是否正确
-- **404**：确认服务实现的是 `/v1/images/generations` 与 `/v1/models`
+- **404**：确认服务实现了 `/v1/models`、`/v1/images/generations`，如需图生图还需 `/v1/images/edits`
 - **生成失败但无详细信息**：先用上面的 cURL 直接调用，确认服务返回格式正确
 - **图片过大报错**：应用侧会拒绝超大 `b64_json`（约 12 MiB 字符级阈值）

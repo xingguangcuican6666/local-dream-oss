@@ -8,16 +8,26 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import io.github.xingguangcuican.localdreamoss.navigation.Screen
+import io.github.xingguangcuican.localdreamoss.ui.theme.DefaultThemeAccentArgb
+import io.github.xingguangcuican.localdreamoss.ui.theme.DefaultThemeBackgroundArgb
 import io.github.xingguangcuican.localdreamoss.ui.screens.ModelListScreen
 import io.github.xingguangcuican.localdreamoss.ui.screens.ModelRunScreen
 import io.github.xingguangcuican.localdreamoss.ui.screens.OpenAIModelRunScreen
@@ -113,7 +123,56 @@ class MainActivity : ComponentActivity() {
         checkNotificationPermission()
 
         setContent {
-            LocalDreamTheme {
+            val prefs = remember { getSharedPreferences("app_prefs", MODE_PRIVATE) }
+            var dynamicColorEnabled by remember {
+                mutableStateOf(prefs.getBoolean("theme_dynamic_color", true))
+            }
+            var themeMode by remember {
+                mutableStateOf(prefs.getString("theme_mode", "system") ?: "system")
+            }
+            var themeAccentColor by remember {
+                mutableIntStateOf(
+                    prefs.getInt("theme_accent_color", DefaultThemeAccentArgb)
+                )
+            }
+            var themeBackgroundColor by remember {
+                mutableIntStateOf(prefs.getInt("theme_background_color", DefaultThemeBackgroundArgb))
+            }
+            DisposableEffect(prefs) {
+                val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { sharedPrefs, key ->
+                    when (key) {
+                        "theme_dynamic_color" -> {
+                            dynamicColorEnabled = sharedPrefs.getBoolean("theme_dynamic_color", true)
+                        }
+
+                        "theme_mode" -> {
+                            themeMode = sharedPrefs.getString("theme_mode", "system") ?: "system"
+                        }
+
+                        "theme_accent_color" -> {
+                            themeAccentColor =
+                                sharedPrefs.getInt("theme_accent_color", DefaultThemeAccentArgb)
+                        }
+
+                        "theme_background_color" -> {
+                            themeBackgroundColor = sharedPrefs.getInt("theme_background_color", DefaultThemeBackgroundArgb)
+                        }
+                    }
+                }
+                prefs.registerOnSharedPreferenceChangeListener(listener)
+                onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+            }
+
+            LocalDreamTheme(
+                darkTheme = when (themeMode) {
+                    "light" -> false
+                    "dark" -> true
+                    else -> isSystemInDarkTheme()
+                },
+                dynamicColor = dynamicColorEnabled,
+                customAccentColor = if (dynamicColorEnabled) null else Color(themeAccentColor),
+                customBackgroundColor = if (dynamicColorEnabled) null else Color(themeBackgroundColor)
+            ) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
