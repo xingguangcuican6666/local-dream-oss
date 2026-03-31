@@ -11,11 +11,7 @@ _Also supports CPU/GPU inference_
 
 ## About this Repo
 
-This is the **open-source version** of [Local Dream](https://github.com/xororz/local-dream) — an Android app for on-device Stable Diffusion image generation. The OSS version is **completely free** and adds developer-oriented features on top of the original app.
-
-Source repository: **[xororz/local-dream](https://github.com/xororz/local-dream)**
-
-If you like it, please consider [sponsoring](https://github.com/xororz/local-dream?tab=readme-ov-file#-support-this-project) the original project.
+**Local Dream OSS** is an open-source Android app for on-device Stable Diffusion image generation. The OSS version is **completely free** and adds developer-oriented features such as a built-in OpenAI-compatible local API server.
 
 ## 🆕 OSS-Exclusive Features
 
@@ -59,13 +55,11 @@ Toggle and configure the built-in server directly from the app:
 >
 > Most users don't get how to properly use highres mode. Please check [here](#npu-high-resolution-support).
 >
-> Now you can import your own NPU models converted using our easy-to-follow [NPU Model Conversion Guide](https://github.com/xororz/local-dream/tree/master/convert). And you can also download some pre-converted models from [xororz/sd-qnn](https://huggingface.co/xororz/sd-qnn/tree/main) or [Mr-J-369](https://huggingface.co/Mr-J-369). Download `_min` if you are using non-flagship chips. Download `_8gen1` if you are using 8gen1. Download `_8gen2` if you are using 8gen2/3/4/5. We recommend checking the instructions on the original model page to set up prompts and parameters.
->
-> You can join our [telegram group](https://t.me/local_dream) for discussion or help with testing.
+> Now you can import your own NPU models converted using our easy-to-follow [NPU Model Conversion Guide](convert/README.md). You can also download some pre-converted models from [xororz/sd-qnn](https://huggingface.co/xororz/sd-qnn/tree/main) or [Mr-J-369](https://huggingface.co/Mr-J-369). Download `_min` if you are using non-flagship chips. Download `_8gen1` if you are using 8gen1. Download `_8gen2` if you are using 8gen2/3/4/5. We recommend checking the instructions on the original model page to set up prompts and parameters.
 
 ## 🚀 Quick Start
 
-1. **Download**: Get the APK from [Releases](https://github.com/xororz/local-dream/releases) or [Google Play](https://play.google.com/store/apps/details?id=io.github.xororz.localdream)(NSFW filtered)
+1. **Download**: Get the APK from [Releases](https://github.com/xingguangcuican6666/local-dream-oss/releases)
 2. **Install**: Install the APK on your Android device
 3. **Select Models**: Open the app and download the model(s) you want to use
 
@@ -74,7 +68,7 @@ Toggle and configure the built-in server directly from the app:
 - 🎨 **txt2img** - Generate images from text descriptions
 - 🖼️ **img2img** - Transform existing images
 - 🎭 **inpaint** - Redraw selected areas of images
-- **custom models** - Import your own SD1.5 models for CPU (in app) or NPU (follow [conversion guide](https://github.com/xororz/local-dream/tree/master/convert)). You can get some pre-converted models from [xororz/sd-qnn](https://huggingface.co/xororz/sd-qnn) or [Mr-J-369](https://huggingface.co/Mr-J-369)
+- **custom models** - Import your own SD1.5 models for CPU (in app) or NPU (follow [conversion guide](convert/README.md)). You can get some pre-converted models from [xororz/sd-qnn](https://huggingface.co/xororz/sd-qnn) or [Mr-J-369](https://huggingface.co/Mr-J-369)
 - **lora support** - Support adding LoRA weights to custom CPU models when importing.
 - **prompt weights** - Emphasize certain words in prompts. E.g., `(masterpiece:1.5)`. Same format as [Automatic1111](https://github.com/AUTOMATIC1111/stable-diffusion-webui)
 - **embeddings** - Support for custom embeddings like [EasyNegative](https://civitai.com/models/7808/easynegative). SafeTensor format is required. Convert `pt` to `safetensors` using [this](https://chino.icu/local-dream/pt2sf.py)
@@ -100,7 +94,7 @@ The following tools are required for building:
 ### 1. Clone Repository
 
 ```bash
-git clone --recursive https://github.com/xororz/local-dream.git
+git clone --recursive https://github.com/xingguangcuican6666/local-dream-oss.git
 ```
 
 ### 2. Prepare SDKs
@@ -309,22 +303,3 @@ Custom seed support for reproducible image generation:
 - **[bhky/opennsfw2](https://github.com/bhky/opennsfw2)** - NSFW content filtering
 
 ---
-
-## 💖 Support This Project
-
-If you find Local Dream useful, please consider supporting its development:
-
-### What Your Support Helps With:
-
-- **Additional Models** - More AI model integrations
-- **New Features** - Enhanced functionality and capabilities
-- **Bug Fixes** - Continuous improvement and maintenance
-
-<a href="https://ko-fi.com/xororz">
-    <img height="36" style="border:0px;height:36px;" src="https://storage.ko-fi.com/cdn/kofi2.png?v=3" border="0" alt="Buy Me a Coffee at ko-fi.com" />
-</a>
-<a href="https://afdian.com/a/xororz">
-    <img height="36" style="border-radius:12px;height:36px;" src="https://pic1.afdiancdn.com/static/img/welcome/button-sponsorme.jpg" alt="在爱发电支持我" />
-</a>
-
-Your sponsorship helps maintain and improve Local Dream for everyone!
