@@ -54,6 +54,11 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # The legacy "tools" package is no longer available in newer SDK
+          # repositories; only install platform-tools here (cmdline-tools is
+          # set up by the action automatically via cmdline-tools-version).
+          packages: platform-tools
 
       - name: Install host build tools
         run: |
