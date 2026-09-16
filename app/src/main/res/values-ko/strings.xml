@@ -319,6 +319,7 @@
     <string name="ultrafix_other_params_hint">프롬프트, CFG, 스케줄러, 시드는 프롬프트 화면의 값을 사용합니다. 거기서 수정하세요.</string>
     <string name="ultrafix_preparing">UltraFix 준비 중…</string>
     <string name="ultrafix_failed">UltraFix에 실패했습니다: %s</string>
+    <string name="ultrafix_quality_denoise_desc">다음 프롬프트로 디노이즈합니다: %s. 끄면 입력란의 프롬프트를 사용합니다.</string>
     <string name="download_model_first">먼저 모델을 다운로드하세요</string>
     <string name="upscaler_anime">애니풍</string>
     <string name="upscaler_anime_desc">애니풍 및 만화 이미지에 최적화되어 있습니다</string>
@@ -440,4 +441,38 @@
     <string name="clean_temp_confirm">임시 파일(중단된 다운로드 및 임시 버퍼) %s을(를) 정리할까요?</string>
     <string name="clean_temp_none">정리할 임시 파일이 없습니다</string>
     <string name="clean_temp_done">%s 확보됨</string>
+
+    <!-- Device link (remote control between two devices) -->
+    <string name="remote_link">기기 연결</string>
+    <string name="remote_host_section">호스트 모드(이 기기에서 모델 실행)</string>
+    <string name="remote_host_hint">같은 네트워크의 다른 Local Dream 기기가 이 기기의 모델을 탐색하고 이미지를 생성할 수 있게 합니다. 호스트 모드 동안 제어 포트(8808)와 생성 포트(8081)가 로컬 네트워크에 개방됩니다.</string>
+    <string name="remote_host_start">호스트 모드 시작</string>
+    <string name="remote_host_stop">호스트 모드 종료</string>
+    <string name="remote_host_addresses">이 기기의 주소</string>
+    <string name="remote_no_network">네트워크 주소를 찾을 수 없습니다. 먼저 Wi-Fi에 연결하세요.</string>
+    <string name="remote_host_serving">실행 중인 모델: %1$s</string>
+    <string name="remote_host_no_model">로드된 모델 없음</string>
+    <string name="remote_connect_section">호스트에 연결(이 기기를 리모컨으로 사용)</string>
+    <string name="remote_connect_hint">호스트 기기에 표시된 주소를 입력하세요. 연결하면 모델 목록에 호스트의 모델이 표시되며 생성은 호스트에서 실행됩니다.</string>
+    <string name="remote_host_field">호스트 주소</string>
+    <string name="remote_connect">연결</string>
+    <string name="remote_disconnect">연결 해제</string>
+    <string name="remote_refresh_models">모델 목록 새로고침</string>
+    <string name="remote_refresh_models_short">새로고침</string>
+    <string name="remote_connect_failed_unreachable">호스트에 연결할 수 없습니다. 주소를 확인하고 호스트 모드가 켜져 있는지 확인하세요.</string>
+    <string name="remote_connected_to">%1$s에 연결됨</string>
+    <string name="remote_banner_connected">%1$s의 모델</string>
+    <string name="remote_banner_offline">호스트에 연결할 수 없음</string>
+    <string name="remote_select_failed">호스트에서 모델을 시작하지 못했습니다</string>
+    <string name="remote_port_hint">기본 제어 포트: %1$d. 주소:포트 형식으로 변경할 수 있습니다.</string>
+    <string name="remote_host_notify_title">호스트 모드 실행 중</string>
+    <string name="remote_host_notify">Local Dream을 로컬 네트워크에서 제어할 수 있습니다</string>
+    <string name="remote_screen_shield">검은 화면(계속 실행)</string>
+    <string name="remote_screen_shield_exit">탭하여 종료</string>
+    <string name="ultrafix_import_action">로컬 이미지 가져오기</string>
+    <string name="ultrafix_import_title">UltraFix용 이미지 가져오기</string>
+    <string name="ultrafix_import_requirement">긴 변 최대 %1$d. UltraFix에는 긴 변 1024 초과, 짧은 변 %2$d 이상이 필요합니다. 작은 이미지는 가져온 후 업스케일할 수 있습니다.</string>
+    <string name="ultrafix_import_output">출력 크기: %1$d×%2$d</string>
+    <string name="ultrafix_import_scale">배율: %1$d%%</string>
+    <string name="ultrafix_longpress_hint">팁: 업스케일 또는 UltraFix 버튼을 길게 누르면 로컬 이미지를 가져올 수 있습니다.</string>
 </resources>

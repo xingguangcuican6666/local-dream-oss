@@ -47,6 +47,7 @@ class BackgroundGenerationService : Service() {
         private const val CHANNEL_ID = "image_generation_channel"
         private const val NOTIFICATION_ID = 1
         const val ACTION_STOP = "stop_generation"
+        const val LOCAL_BACKEND_HOST = "localhost:8081"
 
         // Shared across generations; the long timeouts cover a single SDXL
         // request that can stream for many minutes.
@@ -155,6 +156,9 @@ class BackgroundGenerationService : Service() {
         // base-image file so a pending img2img selection in tmp.txt survives.
         val ultrafix = intent.getBooleanExtra("ultrafix", false)
         val ultrafixTileSize = intent.getIntExtra("ultrafix_tile_size", 512)
+        // Backend to talk to: the local backend by default, or a remote host's
+        // generation port when running in connected-device mode.
+        val backendHost = intent.getStringExtra("backend_host") ?: LOCAL_BACKEND_HOST
 
         val image = if (ultrafix) {
             try {
@@ -231,6 +235,7 @@ class BackgroundGenerationService : Service() {
                 aspectRatio,
                 ultrafix,
                 ultrafixTileSize,
+                backendHost,
             )
         }
 
@@ -256,6 +261,7 @@ class BackgroundGenerationService : Service() {
         aspectRatio: String,
         ultrafix: Boolean,
         ultrafixTileSize: Int,
+        backendHost: String,
     ) = withContext(Dispatchers.IO) {
         // Set once the complete event is fully handled; a socket teardown
         // racing the service shutdown after that point is not an error.
@@ -301,7 +307,7 @@ class BackgroundGenerationService : Service() {
             }
 
             val request = Request.Builder()
-                .url("http://localhost:8081/generate")
+                .url("http://$backendHost/generate")
                 .post(jsonObject.toString().toRequestBody("application/json".toMediaTypeOrNull()))
                 .build()
 

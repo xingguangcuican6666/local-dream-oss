@@ -42,6 +42,7 @@ class GenerationPreferences(private val context: Context) {
     // use time.
     private fun getUltrafixStepsKey(modelId: String) = floatPreferencesKey("${modelId}_ultrafix_steps")
     private fun getUltrafixDenoiseStepsKey(modelId: String) = intPreferencesKey("${modelId}_ultrafix_denoise_steps")
+    private fun getUltrafixQualityDenoiseKey(modelId: String) = booleanPreferencesKey("${modelId}_ultrafix_quality_denoise")
 
     fun observeUltrafixSteps(modelId: String): Flow<Float> = context.dataStore.data
         .catch { exception ->
@@ -55,10 +56,22 @@ class GenerationPreferences(private val context: Context) {
         }
         .map { it[getUltrafixDenoiseStepsKey(modelId)] ?: GenerationDefaults.GLOBAL.ultrafixDenoiseSteps }
 
-    suspend fun saveUltrafixParams(modelId: String, steps: Float, denoiseSteps: Int) {
+    fun observeUltrafixQualityDenoise(modelId: String): Flow<Boolean> = context.dataStore.data
+        .catch { exception ->
+            if (exception is IOException) emit(emptyPreferences()) else throw exception
+        }
+        .map { it[getUltrafixQualityDenoiseKey(modelId)] ?: GenerationDefaults.GLOBAL.ultrafixQualityDenoise }
+
+    suspend fun saveUltrafixParams(
+        modelId: String,
+        steps: Float,
+        denoiseSteps: Int,
+        qualityDenoise: Boolean,
+    ) {
         context.dataStore.edit { preferences ->
             preferences[getUltrafixStepsKey(modelId)] = steps
             preferences[getUltrafixDenoiseStepsKey(modelId)] = denoiseSteps
+            preferences[getUltrafixQualityDenoiseKey(modelId)] = qualityDenoise
         }
     }
 

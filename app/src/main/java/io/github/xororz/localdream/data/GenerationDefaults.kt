@@ -28,6 +28,10 @@ data class GenerationDefaults(
     // default 4 is ceil(10 * 0.4).
     val ultrafixSteps: Float = 10f,
     val ultrafixDenoiseSteps: Int = 4,
+    // When on (default), UltraFix runs on the neutral quality tags
+    // (ULTRAFIX_QUALITY_PROMPT) instead of the prompt-page prompt; off uses the
+    // box prompt as before.
+    val ultrafixQualityDenoise: Boolean = true,
 ) {
     companion object {
         val GLOBAL = GenerationDefaults()
@@ -38,5 +42,10 @@ data class GenerationDefaults(
         const val ULTRAFIX_STEPS_MIN = 1f
         const val ULTRAFIX_STEPS_MAX = 20f
         const val ULTRAFIX_DENOISE_STEPS_MAX = 10
+
+        // Neutral quality tags UltraFix runs on when quality-denoise is on.
+        // Subject-free on purpose so tiles don't re-stage the subject; not
+        // localized -- it is a model prompt, not UI copy.
+        const val ULTRAFIX_QUALITY_PROMPT = "masterpiece, best quality, 4k resolution"
     }
 }

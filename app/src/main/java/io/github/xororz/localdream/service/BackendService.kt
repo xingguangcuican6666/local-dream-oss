@@ -72,6 +72,18 @@ class BackendService : Service() {
         const val ACTION_STOP = "io.github.xororz.localdream.STOP_GENERATION"
         const val ACTION_RESTART = "io.github.xororz.localdream.RESTART_BACKEND"
 
+        // Brings the service up as a foreground service without touching any
+        // backend process. Sent when host mode starts (while the app is still
+        // in the foreground) so later remote /select commands are plain
+        // startService() deliveries to an already-foreground service instead
+        // of new-FGS starts, which Android 12+ blocks from the background.
+        const val ACTION_STANDBY = "io.github.xororz.localdream.STANDBY_BACKEND"
+
+        // Pseudo backend type: native process in --upscaler_mode (no model
+        // dir). Used by host mode so a controller's standalone upscale page
+        // can run on this device's NPU.
+        const val BACKEND_TYPE_UPSCALER = "upscaler"
+
         private object StateHolder {
             val _backendState = MutableStateFlow<BackendState>(BackendState.Idle)
 
@@ -79,18 +91,26 @@ class BackendService : Service() {
             // so a screen can tell whether 8081 is already serving *its* model
             // vs. a previous model still alive in the stop grace window.
             val _servingModelId = MutableStateFlow<String?>(null)
+
+            // Resolution the live process was started for. Reported through
+            // host mode's /status so a controller only declares Ready once the
+            // backend matches its full config, not just the model id.
+            val _servingResolution = MutableStateFlow<Pair<Int, Int>?>(null)
         }
 
         val backendState: StateFlow<BackendState> = StateHolder._backendState
 
         val servingModelId: StateFlow<String?> = StateHolder._servingModelId
 
+        val servingResolution: StateFlow<Pair<Int, Int>?> = StateHolder._servingResolution
+
         private fun updateState(state: BackendState) {
             StateHolder._backendState.value = state
         }
 
-        private fun updateServingModelId(modelId: String?) {
-            StateHolder._servingModelId.value = modelId
+        private fun updateServing(config: BackendConfig?) {
+            StateHolder._servingModelId.value = config?.modelId
+            StateHolder._servingResolution.value = config?.let { Pair(it.width, it.height) }
         }
     }
 
@@ -107,12 +127,17 @@ class BackendService : Service() {
     }
 
     // What a backend process is (or should be) running for. Equality drives
-    // reconcile()'s "already serving this exact config" decision.
+    // reconcile()'s "already serving this exact config" decision. listenOnAll
+    // is part of the config on purpose: entering/exiting host mode changes the
+    // required bind address, and reusing a live process across that boundary
+    // would either leave the port unreachable for the controller or leave it
+    // exposed after host mode ends.
     private data class BackendConfig(
         val modelId: String,
         val backendType: String,
         val width: Int,
         val height: Int,
+        val listenOnAll: Boolean,
     )
 
     override fun onCreate() {
@@ -125,16 +150,28 @@ class BackendService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.i(TAG, "service command: ${intent?.action}")
-        startForeground(
-            NOTIFICATION_ID,
-            createNotification(this.getString(R.string.backend_notify)),
-        )
+        try {
+            startForeground(
+                NOTIFICATION_ID,
+                createNotification(this.getString(R.string.backend_notify)),
+            )
+        } catch (e: Exception) {
+            // Android 12+ can reject foreground promotion when the command
+            // arrived with the app in the background (e.g. the service was
+            // reclaimed and re-created by a remote host-mode command).
+            // Continue as a background service rather than crash: the backend
+            // process still works, the system may just reclaim it sooner.
+            Log.w(TAG, "startForeground rejected: ${e.message}")
+        }
 
         // Commands only declare intent; the single backend thread converges the
         // actual process to it via reconcile(). This keeps every start/stop
         // ordered and race-free regardless of how fast the screen comes and goes.
         when (intent?.action) {
             ACTION_STOP -> serviceScope.launch { requestStop(startId) }
+
+            // Foreground promotion only; no backend change.
+            ACTION_STANDBY -> {}
 
             else -> {
                 val forceRestart = intent?.action == ACTION_RESTART
@@ -153,7 +190,14 @@ class BackendService : Service() {
         val backendType = intent.getStringExtra("backendType") ?: return null
         val width = intent.getIntExtra("width", 512)
         val height = intent.getIntExtra("height", 512)
-        return BackendConfig(modelId, backendType, width, height)
+        // Host mode is read from RemoteHostService's in-process state, not a
+        // persisted flag: a crash can never leave a stale "expose the port"
+        // bit behind, and a config-equality check below forces a restart when
+        // the bind address requirement changes.
+        val listenOnAll = getSharedPreferences("app_prefs", MODE_PRIVATE)
+            .getBoolean("listen_on_all_addresses", false) ||
+            RemoteHostService.isRunning.value
+        return BackendConfig(modelId, backendType, width, height, listenOnAll)
     }
 
     // Declares the desired backend and converges to it. Cancels any pending
@@ -184,7 +228,13 @@ class BackendService : Service() {
             // with its foreground notification intact.
             if (desired == null) {
                 stopBackend()
-                if (stopSelfResult(startId)) {
+                // While host mode is active the service must survive with its
+                // foreground status: remote /select commands arrive over the
+                // network with no visible activity, and Android 12+ blocks
+                // promoting a freshly started service to the foreground from
+                // that state. Keeping this one alive makes those commands
+                // plain startService() deliveries to a live FGS.
+                if (!RemoteHostService.isRunning.value && stopSelfResult(startId)) {
                     stopForeground(STOP_FOREGROUND_REMOVE)
                 }
             }
@@ -204,18 +254,18 @@ class BackendService : Service() {
         val alreadyServing = process?.isAlive == true && serving == want
         if (alreadyServing && !forceRestart) {
             Log.i(TAG, "backend already serving ${want.modelId} ${want.width}x${want.height}")
-            updateServingModelId(want.modelId)
+            updateServing(want)
             updateState(BackendState.Running)
             return
         }
         stopBackend()
         if (startBackend(want)) {
             serving = want
-            updateServingModelId(want.modelId)
+            updateServing(want)
             updateState(BackendState.Running)
         } else {
             serving = null
-            updateServingModelId(null)
+            updateServing(null)
             updateState(BackendState.Error("Backend start failed", want.modelId))
         }
     }
@@ -380,23 +430,40 @@ class BackendService : Service() {
 
             val preferences = this.getSharedPreferences("app_prefs", MODE_PRIVATE)
             val useImg2img = preferences.getBoolean("use_img2img", true)
-            val listenOnAll = preferences.getBoolean("listen_on_all_addresses", false)
+            // Part of the config (captured at command time in parseConfig) so
+            // reconcile() restarts the process when the bind address
+            // requirement changes instead of reusing a mismatched one.
+            val listenOnAll = config.listenOnAll
             val openAiApiEnabled = preferences.getBoolean("enable_openai_api", true)
             val openAiApiKey = preferences.getString("openai_api_key", "")?.trim().orEmpty()
 
-            val command = mutableListOf(
-                executableFile.absolutePath,
-                "--type",
-                backendType,
-                "--model_dir",
-                modelsDir.absolutePath,
-                "--port",
-                "8081",
-            )
-            if (backendType != "sd15cpu") {
+            val command = if (backendType == BACKEND_TYPE_UPSCALER) {
+                // Same invocation as the standalone upscale screen's private
+                // process; run through this service so host mode gets the
+                // usual reconcile/stop-grace lifecycle and --listen_all.
+                mutableListOf(
+                    executableFile.absolutePath,
+                    "--upscaler_mode",
+                    "--lib_dir",
+                    runtimeDir.absolutePath,
+                    "--port",
+                    "8081",
+                )
+            } else {
+                mutableListOf(
+                    executableFile.absolutePath,
+                    "--type",
+                    backendType,
+                    "--model_dir",
+                    modelsDir.absolutePath,
+                    "--port",
+                    "8081",
+                )
+            }
+            if (backendType != "sd15cpu" && backendType != BACKEND_TYPE_UPSCALER) {
                 command += listOf("--lib_dir", runtimeDir.absolutePath)
             }
-            if (!useImg2img) {
+            if (!useImg2img && backendType != BACKEND_TYPE_UPSCALER) {
                 command += "--no_img2img"
             }
             if (backendType == "sd15npu" && (width != 512 || height != 512)) {
@@ -424,7 +491,9 @@ class BackendService : Service() {
             if (File(modelsDir, "V_PRED").exists()) {
                 command += "--use_v_pred"
             }
-            if (BuildConfig.FLAVOR == "filter") {
+            // The upscaler-mode process takes no safety-checker flag (same as
+            // the standalone upscale screen's own invocation).
+            if (BuildConfig.FLAVOR == "filter" && backendType != BACKEND_TYPE_UPSCALER) {
                 command += listOf(
                     "--safety_checker",
                     File(filesDir, "safety_checker.mnn").absolutePath,
@@ -589,6 +658,6 @@ class BackendService : Service() {
             }
         }
         serving = null
-        updateServingModelId(null)
+        updateServing(null)
     }
 }

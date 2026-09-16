@@ -29,6 +29,7 @@ import io.github.xororz.localdream.ui.screens.HistoryScreen
 import io.github.xororz.localdream.ui.screens.MigrationScreen
 import io.github.xororz.localdream.ui.screens.ModelListScreen
 import io.github.xororz.localdream.ui.screens.ModelRunScreen
+import io.github.xororz.localdream.ui.screens.RemoteScreen
 import io.github.xororz.localdream.ui.screens.UpscaleScreen
 import io.github.xororz.localdream.ui.theme.LocalDreamTheme
 import io.github.xororz.localdream.ui.theme.LocalThemeController
@@ -181,12 +182,18 @@ private fun AppContent() {
                 navArgument("modelId") {
                     type = NavType.StringType
                 },
+                navArgument("remote") {
+                    type = NavType.BoolType
+                    defaultValue = false
+                },
             ),
         ) { backStackEntry ->
             val modelId = backStackEntry.arguments?.getString("modelId") ?: ""
+            val isRemote = backStackEntry.arguments?.getBoolean("remote") ?: false
 
             ModelRunScreen(
                 modelId = modelId,
+                isRemote = isRemote,
                 navController = navController,
             )
         }
@@ -195,6 +202,9 @@ private fun AppContent() {
         }
         composable(Screen.History.route) {
             HistoryScreen(navController)
+        }
+        composable(Screen.RemoteLink.route) {
+            RemoteScreen(navController)
         }
     }
 }

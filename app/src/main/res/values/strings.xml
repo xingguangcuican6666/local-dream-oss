@@ -334,6 +334,7 @@
     <string name="ultrafix_other_params_hint">Prompt, CFG, scheduler and seed are taken from the prompt page — edit them there.</string>
     <string name="ultrafix_preparing">Preparing UltraFix…</string>
     <string name="ultrafix_failed">UltraFix failed: %s</string>
+    <string name="ultrafix_quality_denoise_desc">Denoise with the following prompt: %s. Turn off to use your prompt-page prompt instead.</string>
     <string name="download_model_first">Please download the model first</string>
     <string name="upscaler_anime">Anime</string>
     <string name="upscaler_anime_desc">Optimized for anime and cartoon images</string>
@@ -455,4 +456,38 @@
     <string name="clean_temp_confirm">Free up %s of temporary files (interrupted downloads and scratch buffers)?</string>
     <string name="clean_temp_none">No temporary files to clean</string>
     <string name="clean_temp_done">Freed %s</string>
+
+    <!-- Device link (remote control between two devices) -->
+    <string name="remote_link">Device link</string>
+    <string name="remote_host_section">Host mode (this device runs models)</string>
+    <string name="remote_host_hint">Let another device running Local Dream on the same network browse this device\'s models and generate images with them. While host mode is on, the control port (8808) and the generation port (8081) are open to your local network.</string>
+    <string name="remote_host_start">Enter host mode</string>
+    <string name="remote_host_stop">Exit host mode</string>
+    <string name="remote_host_addresses">This device\'s address</string>
+    <string name="remote_no_network">No network address found. Connect to Wi-Fi first.</string>
+    <string name="remote_host_serving">Serving model: %1$s</string>
+    <string name="remote_host_no_model">No model loaded</string>
+    <string name="remote_connect_section">Connect to a host (this device is the remote control)</string>
+    <string name="remote_connect_hint">Enter the address shown on the host device. The model list will then show the host\'s models, and generation runs on the host.</string>
+    <string name="remote_host_field">Host address</string>
+    <string name="remote_connect">Connect</string>
+    <string name="remote_disconnect">Disconnect</string>
+    <string name="remote_refresh_models">Refresh model list</string>
+    <string name="remote_refresh_models_short">Refresh</string>
+    <string name="remote_connect_failed_unreachable">Cannot reach the host. Check the address and make sure host mode is on.</string>
+    <string name="remote_connected_to">Connected to %1$s</string>
+    <string name="remote_banner_connected">Models from %1$s</string>
+    <string name="remote_banner_offline">Host unreachable</string>
+    <string name="remote_select_failed">Failed to start the model on the host</string>
+    <string name="remote_port_hint">Default control port: %1$d. Use address:port to override.</string>
+    <string name="remote_host_notify_title">Host mode active</string>
+    <string name="remote_host_notify">Local Dream can be controlled from your local network</string>
+    <string name="remote_screen_shield">Black screen (stay awake)</string>
+    <string name="remote_screen_shield_exit">Tap to exit</string>
+    <string name="ultrafix_import_action">Import local image</string>
+    <string name="ultrafix_import_title">Import image for UltraFix</string>
+    <string name="ultrafix_import_requirement">Long side up to %1$d. UltraFix needs the long side above 1024 and the short side at least %2$d; smaller imports can be upscaled first.</string>
+    <string name="ultrafix_import_output">Output size: %1$d×%2$d</string>
+    <string name="ultrafix_import_scale">Scale: %1$d%%</string>
+    <string name="ultrafix_longpress_hint">Tip: long-press the upscale or UltraFix button to import a local image.</string>
 </resources>

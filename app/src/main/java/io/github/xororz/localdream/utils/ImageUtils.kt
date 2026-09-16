@@ -11,6 +11,7 @@ import android.provider.MediaStore
 import android.util.Log
 import io.github.xororz.localdream.R
 import io.github.xororz.localdream.data.Model
+import io.github.xororz.localdream.service.BackgroundGenerationService
 import io.github.xororz.localdream.ui.screens.GenerationParameters
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -63,21 +64,29 @@ const val UPSCALER_NATIVE_SCALE = 4
  * The backend always emits a [UPSCALER_NATIVE_SCALE]x result. When [targetScale]
  * is smaller, the result is downscaled to [targetScale]x of the source on the
  * client, since the model itself only runs at its native ratio.
+ *
+ * In connected-device mode, [backendHost] points at the host's generation
+ * port and [remoteUpscalerPath] is the weight file's path on the HOST's
+ * filesystem (from its catalog); the native /upscale endpoint loads whatever
+ * X-Upscaler-Path names on the machine it runs on.
  */
 suspend fun performUpscale(
     context: Context,
     bitmap: Bitmap,
     upscalerId: String,
     targetScale: Int = UPSCALER_NATIVE_SCALE,
+    backendHost: String = BackgroundGenerationService.LOCAL_BACKEND_HOST,
+    remoteUpscalerPath: String? = null,
 ): Bitmap = withContext(Dispatchers.IO) {
     val totalStartTime = System.currentTimeMillis()
 
-    // Get upscaler model path
-    val upscalerModelsDir = File(Model.getModelsDir(context), upscalerId)
-    val upscalerFile = File(upscalerModelsDir, Model.UPSCALER_FILE_NAME)
-
-    if (!upscalerFile.exists()) {
-        throw Exception("Upscaler model file not found: ${upscalerFile.absolutePath}")
+    val upscalerPath = remoteUpscalerPath ?: run {
+        val upscalerFile =
+            File(File(Model.getModelsDir(context), upscalerId), Model.UPSCALER_FILE_NAME)
+        if (!upscalerFile.exists()) {
+            throw Exception("Upscaler model file not found: ${upscalerFile.absolutePath}")
+        }
+        upscalerFile.absolutePath
     }
 
     // Convert bitmap to RGB bytes
@@ -101,10 +110,10 @@ suspend fun performUpscale(
 
     // Binary protocol: raw RGB in, JPEG out, metadata in headers.
     val request = Request.Builder()
-        .url("http://localhost:8081/upscale")
+        .url("http://$backendHost/upscale")
         .header("X-Image-Width", width.toString())
         .header("X-Image-Height", height.toString())
-        .header("X-Upscaler-Path", upscalerFile.absolutePath)
+        .header("X-Upscaler-Path", upscalerPath)
         .post(rgbBytes.toRequestBody("application/octet-stream".toMediaTypeOrNull()))
         .build()
 

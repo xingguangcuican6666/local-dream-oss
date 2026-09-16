@@ -324,6 +324,7 @@
     <string name="ultrafix_other_params_hint">プロンプト・CFG・スケジューラ・シードはプロンプト画面の値を使用します。変更はそちらで行ってください。</string>
     <string name="ultrafix_preparing">UltraFixを準備中…</string>
     <string name="ultrafix_failed">UltraFixに失敗しました: %s</string>
+    <string name="ultrafix_quality_denoise_desc">次のプロンプトでデノイズします：%s。オフにすると入力欄のプロンプトを使用します。</string>
     <string name="download_model_first">まずモデルをダウンロードしてください</string>
     <string name="upscaler_anime">アニメ風</string>
     <string name="upscaler_anime_desc">アニメや漫画の画像に最適化</string>
@@ -445,4 +446,38 @@
     <string name="clean_temp_confirm">一時ファイル（中断したダウンロードや一時バッファ）%s を削除しますか？</string>
     <string name="clean_temp_none">削除する一時ファイルはありません</string>
     <string name="clean_temp_done">%s を解放しました</string>
+
+    <!-- Device link (remote control between two devices) -->
+    <string name="remote_link">デバイス連携</string>
+    <string name="remote_host_section">ホストモード（この端末でモデルを実行）</string>
+    <string name="remote_host_hint">同じネットワーク上の Local Dream を搭載した別の端末が、この端末のモデルを参照して画像を生成できるようにします。ホストモード中は、制御ポート（8808）と生成ポート（8081）がローカルネットワークに開放されます。</string>
+    <string name="remote_host_start">ホストモードを開始</string>
+    <string name="remote_host_stop">ホストモードを終了</string>
+    <string name="remote_host_addresses">この端末のアドレス</string>
+    <string name="remote_no_network">ネットワークアドレスが見つかりません。先に Wi-Fi に接続してください。</string>
+    <string name="remote_host_serving">実行中のモデル：%1$s</string>
+    <string name="remote_host_no_model">モデル未ロード</string>
+    <string name="remote_connect_section">ホストに接続（この端末をリモコンとして使用）</string>
+    <string name="remote_connect_hint">ホスト端末に表示されるアドレスを入力してください。接続後、モデル一覧にはホストのモデルが表示され、生成はホスト上で行われます。</string>
+    <string name="remote_host_field">ホストアドレス</string>
+    <string name="remote_connect">接続</string>
+    <string name="remote_disconnect">切断</string>
+    <string name="remote_refresh_models">モデル一覧を更新</string>
+    <string name="remote_refresh_models_short">更新</string>
+    <string name="remote_connect_failed_unreachable">ホストに接続できません。アドレスを確認し、ホストモードが有効か確認してください。</string>
+    <string name="remote_connected_to">%1$s に接続しました</string>
+    <string name="remote_banner_connected">%1$s のモデル</string>
+    <string name="remote_banner_offline">ホストに到達できません</string>
+    <string name="remote_select_failed">ホストでのモデル起動に失敗しました</string>
+    <string name="remote_port_hint">既定の制御ポート：%1$d。アドレス:ポート の形式で変更できます。</string>
+    <string name="remote_host_notify_title">ホストモード実行中</string>
+    <string name="remote_host_notify">Local Dream はローカルネットワークから操作できます</string>
+    <string name="remote_screen_shield">黒画面（動作を維持）</string>
+    <string name="remote_screen_shield_exit">タップで戻る</string>
+    <string name="ultrafix_import_action">ローカル画像を読み込む</string>
+    <string name="ultrafix_import_title">UltraFix 用画像を読み込む</string>
+    <string name="ultrafix_import_requirement">長辺は最大 %1$d。UltraFix には長辺 1024 超かつ短辺 %2$d 以上が必要です。小さい画像は読み込み後にアップスケールできます。</string>
+    <string name="ultrafix_import_output">出力サイズ：%1$d×%2$d</string>
+    <string name="ultrafix_import_scale">拡大率：%1$d%%</string>
+    <string name="ultrafix_longpress_hint">ヒント：アップスケールまたは UltraFix ボタンを長押しするとローカル画像を読み込めます。</string>
 </resources>

@@ -264,6 +264,7 @@ fun ModelListScreen(navController: NavController, modifier: Modifier = Modifier)
     val msgCleanTempDone = stringResource(R.string.clean_temp_done)
     val msgRenameSuccess = stringResource(R.string.rename_success)
     val msgRenameFailed = stringResource(R.string.rename_failed)
+    val msgRemoteOffline = stringResource(R.string.remote_banner_offline)
 
     var downloadingModel by remember { mutableStateOf<Model?>(null) }
     var currentProgress by remember { mutableStateOf<DownloadProgress?>(null) }
@@ -302,6 +303,11 @@ fun ModelListScreen(navController: NavController, modifier: Modifier = Modifier)
 
     val modelRepository = remember { ModelRepository.getInstance(context) }
     val upscalerRepository = remember { UpscalerRepository.getInstance(context) }
+    val remoteRepository = remember { RemoteRepository.getInstance(context) }
+    // Connected-device mode: the list shows the host device's installed
+    // models; all local management actions (download/import/delete/rename)
+    // are hidden because they would act on this device's storage.
+    val remoteActive = remoteRepository.isActive
 
     var showHelpDialog by remember { mutableStateOf(false) }
 
@@ -374,13 +380,20 @@ fun ModelListScreen(navController: NavController, modifier: Modifier = Modifier)
             selectedSource = generationPreferences.getSelectedSource()
         }
         modelRepository.ensureLoaded()
+        // Re-establish a saved device link and pull a fresh catalog; on
+        // failure the offline banner offers a retry.
+        remoteRepository.restore()
+        if (remoteRepository.isActive) {
+            remoteRepository.refresh()
+        }
     }
 
-    val cpuModels = remember(modelRepository.models, pinnedIds) {
-        PinnedModels.sort(modelRepository.models.filter { it.runOnCpu }, pinnedIds)
+    val listedModels = if (remoteActive) remoteRepository.models else modelRepository.models
+    val cpuModels = remember(listedModels, pinnedIds) {
+        PinnedModels.sort(listedModels.filter { it.runOnCpu }, pinnedIds)
     }
-    val npuModels = remember(modelRepository.models, pinnedIds) {
-        PinnedModels.sort(modelRepository.models.filter { !it.runOnCpu }, pinnedIds)
+    val npuModels = remember(listedModels, pinnedIds) {
+        PinnedModels.sort(listedModels.filter { !it.runOnCpu }, pinnedIds)
     }
 
     val lastViewedPage = remember {
@@ -960,7 +973,16 @@ fun ModelListScreen(navController: NavController, modifier: Modifier = Modifier)
                                     navController.navigate(Screen.History.route)
                                 },
                             )
-                            if (Model.isQualcommDevice()) {
+                            // In connected-device mode the standalone upscale
+                            // page runs on the host's NPU, so it is offered
+                            // when the host has an upscaler installed; locally
+                            // it needs this device's Qualcomm NPU.
+                            val showUpscaleEntry = if (remoteActive) {
+                                remoteRepository.upscalerPaths.isNotEmpty()
+                            } else {
+                                Model.isQualcommDevice()
+                            }
+                            if (showUpscaleEntry) {
                                 DropdownMenuItem(
                                     text = { Text(stringResource(R.string.image_upscale)) },
                                     leadingIcon = {
@@ -972,6 +994,16 @@ fun ModelListScreen(navController: NavController, modifier: Modifier = Modifier)
                                     },
                                 )
                             }
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.remote_link)) },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Devices, contentDescription = null)
+                                },
+                                onClick = {
+                                    menuExpanded = false
+                                    navController.navigate(Screen.RemoteLink.route)
+                                },
+                            )
                             DropdownMenuItem(
                                 text = { Text(stringResource(R.string.settings)) },
                                 leadingIcon = {
@@ -996,6 +1028,16 @@ fun ModelListScreen(navController: NavController, modifier: Modifier = Modifier)
                 .padding(paddingValues)
                 .nestedScroll(scrollBehavior.nestedScrollConnection),
         ) {
+            if (remoteActive) {
+                RemoteModeBanner(
+                    deviceName = remoteRepository.connection?.deviceName ?: "",
+                    online = remoteRepository.online,
+                    refreshing = remoteRepository.refreshing,
+                    onRefresh = { scope.launch { remoteRepository.refresh() } },
+                    onDisconnect = { remoteRepository.disconnect() },
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                )
+            }
             PrimaryTabRow(
                 selectedTabIndex = pagerState.currentPage,
                 modifier = Modifier.fillMaxWidth(),
@@ -1029,7 +1071,7 @@ fun ModelListScreen(navController: NavController, modifier: Modifier = Modifier)
                     contentPadding = PaddingValues(12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    if (page == 0) {
+                    if (page == 0 && !remoteActive) {
                         item {
                             AddCustomModelButton(
                                 onClick = { showCustomModelDialog = true },
@@ -1038,7 +1080,7 @@ fun ModelListScreen(navController: NavController, modifier: Modifier = Modifier)
                         }
                     }
 
-                    if (page == 1 && Model.isQualcommDevice()) {
+                    if (page == 1 && !remoteActive) {
                         item {
                             AddCustomNpuModelButton(
                                 onClick = { showCustomNpuModelDialog = true },
@@ -1062,7 +1104,22 @@ fun ModelListScreen(navController: NavController, modifier: Modifier = Modifier)
                             isSelectionMode = isSelectionMode,
                             isPinned = model.id in pinnedIds,
                             onClick = {
-                                if (!Model.isDeviceSupported() && !model.runOnCpu) {
+                                if (remoteActive) {
+                                    // The model runs on the host device, so this
+                                    // device's SoC support is irrelevant; just
+                                    // require the host to be reachable.
+                                    if (remoteRepository.online) {
+                                        navController.navigate(
+                                            Screen.ModelRun.createRoute(model.id, remote = true),
+                                        )
+                                    } else {
+                                        scope.launch {
+                                            snackbarHostState.showSnackbar(msgRemoteOffline)
+                                        }
+                                    }
+                                    return@ModelCard
+                                }
+                                if (!Model.isDeviceSupported() && !model.runOnCpu && !model.isCustom) {
                                     scope.launch {
                                         snackbarHostState.showSnackbar(msgUnsupportNpu)
                                     }
@@ -1089,7 +1146,10 @@ fun ModelListScreen(navController: NavController, modifier: Modifier = Modifier)
                                 }
                             },
                             onLongClick = {
-                                if (model.isDownloaded && !isSelectionMode) {
+                                // Selection mode drives local file management
+                                // (pin/rename/delete); none of it applies to
+                                // the host's models.
+                                if (!remoteActive && model.isDownloaded && !isSelectionMode) {
                                     isSelectionMode = true
                                     selectedModels = setOf(model)
                                 }
@@ -1995,6 +2055,75 @@ internal fun formatBytes(bytes: Long): String = when {
     bytes < 1024 * 1024 -> "${bytes / 1024} KB"
     bytes < 1024 * 1024 * 1024 -> "${bytes / (1024 * 1024)} MB"
     else -> String.format(Locale.US, "%.2f GB", bytes / (1024.0 * 1024.0 * 1024.0))
+}
+
+/**
+ * Status strip shown above the tabs while connected-device mode is active:
+ * which host the listed models come from, whether it is reachable, and the
+ * refresh/disconnect actions.
+ */
+@Composable
+private fun RemoteModeBanner(
+    deviceName: String,
+    online: Boolean,
+    refreshing: Boolean,
+    onRefresh: () -> Unit,
+    onDisconnect: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = if (online) {
+                MaterialTheme.colorScheme.secondaryContainer
+            } else {
+                MaterialTheme.colorScheme.errorContainer
+            },
+        ),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Default.Devices,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+                tint = if (online) {
+                    MaterialTheme.colorScheme.onSecondaryContainer
+                } else {
+                    MaterialTheme.colorScheme.onErrorContainer
+                },
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.remote_banner_connected, deviceName),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = if (online) {
+                        MaterialTheme.colorScheme.onSecondaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.onErrorContainer
+                    },
+                )
+                if (!online) {
+                    Text(
+                        text = stringResource(R.string.remote_banner_offline),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                    )
+                }
+            }
+            TextButton(onClick = onRefresh, enabled = !refreshing) {
+                Text(stringResource(R.string.remote_refresh_models_short))
+            }
+            TextButton(onClick = onDisconnect) {
+                Text(stringResource(R.string.remote_disconnect))
+            }
+        }
+    }
 }
 
 @Composable
@@ -3103,13 +3232,6 @@ suspend fun extractNpuModel(
         withContext(Dispatchers.Main) {
             onStart()
             onProgress(context.getString(R.string.preparing_npu_model))
-        }
-
-        if (!Model.isQualcommDevice()) {
-            withContext(Dispatchers.Main) {
-                onError(context.getString(R.string.only_qualcomm_npu))
-            }
-            return@withContext
         }
 
         val modelId = modelName.replace(" ", "")

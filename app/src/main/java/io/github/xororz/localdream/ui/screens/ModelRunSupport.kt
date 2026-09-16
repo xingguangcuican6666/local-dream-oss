@@ -15,7 +15,10 @@ import androidx.core.content.ContextCompat
 import androidx.core.graphics.createBitmap
 import androidx.core.graphics.scale
 import io.github.xororz.localdream.data.GenerationMode
+import io.github.xororz.localdream.remote.RemoteApiClient
+import io.github.xororz.localdream.remote.RemoteProtocol
 import io.github.xororz.localdream.service.BackendService
+import io.github.xororz.localdream.service.BackgroundGenerationService
 import io.github.xororz.localdream.utils.Http
 import java.io.ByteArrayOutputStream
 import java.util.Base64
@@ -58,13 +61,16 @@ private val healthClient: OkHttpClient by lazy {
 
 internal data class TokenizeResult(val count: Int, val maxLength: Int, val overflowOffset: Int)
 
-internal suspend fun tokenizePromptRequest(text: String): TokenizeResult? = withContext(Dispatchers.IO) {
+internal suspend fun tokenizePromptRequest(
+    text: String,
+    backendHost: String = BackgroundGenerationService.LOCAL_BACKEND_HOST,
+): TokenizeResult? = withContext(Dispatchers.IO) {
     try {
         val body = JSONObject().apply { put("prompt", text) }
             .toString()
             .toRequestBody("application/json".toMediaTypeOrNull())
         val request = Request.Builder()
-            .url("http://localhost:8081/tokenize")
+            .url("http://$backendHost/tokenize")
             .post(body)
             .build()
         tokenizeClient.newCall(request).execute().use { response ->
@@ -161,6 +167,56 @@ internal suspend fun checkBackendHealth(
 }
 
 /**
+ * Remote counterpart of [checkBackendHealth]: waits until the host device's
+ * backend is serving [expectedModelId] at exactly [expectedWidth] x
+ * [expectedHeight] and its generation port answers /health. The resolution
+ * match matters: the host may still be serving the same model at an older
+ * resolution when the check starts (the /select that switches it races this
+ * poll), and declaring Ready then would send generations to the wrong patch.
+ */
+internal suspend fun checkRemoteBackendHealth(
+    client: RemoteApiClient,
+    expectedModelId: String,
+    expectedWidth: Int,
+    expectedHeight: Int,
+    onHealthy: () -> Unit,
+    onUnhealthy: () -> Unit,
+) = withContext(Dispatchers.IO) {
+    val startTime = System.currentTimeMillis()
+    val timeoutDuration = 120_000L
+    var pollDelayMs = 300L
+
+    while (currentCoroutineContext().isActive) {
+        if (System.currentTimeMillis() - startTime > timeoutDuration) {
+            withContext(Dispatchers.Main) { onUnhealthy() }
+            break
+        }
+
+        val status = client.fetchStatus()
+        if (status != null) {
+            val ownError = status.state == RemoteProtocol.STATE_ERROR &&
+                (status.errorModelId == null || status.errorModelId == expectedModelId)
+            if (ownError) {
+                withContext(Dispatchers.Main) { onUnhealthy() }
+                break
+            }
+            if (status.servingModelId == expectedModelId &&
+                status.state == RemoteProtocol.STATE_RUNNING &&
+                status.width == expectedWidth &&
+                status.height == expectedHeight &&
+                client.checkGenerationHealth()
+            ) {
+                withContext(Dispatchers.Main) { onHealthy() }
+                break
+            }
+        }
+
+        delay(pollDelayMs)
+        pollDelayMs = (pollDelayMs * 2).coerceAtMost(1000L)
+    }
+}
+
+/**
  * For a fixed-1024-canvas model (SDXL / Anima) with a non-1:1 aspectRatio,
  * returns the centered (target_w, target_h) region inside the 1024x1024
  * generation canvas. The longest side is forced to canvasMax (1024), the
@@ -214,6 +270,39 @@ fun padBitmapToCanvas(src: Bitmap, canvasW: Int, canvasH: Int): Bitmap {
     val top = ((canvasH - src.height) / 2).toFloat()
     canvas.drawBitmap(src, left, top, null)
     return out
+}
+
+/** Snap before decoding the crop so generation and stitching use the same pixels. */
+internal fun snapInpaintCropRect(rect: Rect, imageWidth: Int, imageHeight: Int, tolerance: Int): Rect {
+    val result = Rect(rect)
+    if (imageWidth - result.width() <= tolerance) {
+        result.left = 0
+        result.right = imageWidth
+    } else if (result.right >= imageWidth - tolerance) {
+        result.offset(imageWidth - result.right, 0)
+    } else if (result.left <= tolerance) {
+        result.offset(-result.left, 0)
+    }
+    if (imageHeight - result.height() <= tolerance) {
+        result.top = 0
+        result.bottom = imageHeight
+    } else if (result.bottom >= imageHeight - tolerance) {
+        result.offset(0, imageHeight - result.bottom)
+    } else if (result.top <= tolerance) {
+        result.offset(0, -result.top)
+    }
+    return result
+}
+
+internal fun mergeDrawingLayers(previous: Bitmap?, drawing: Bitmap): Bitmap {
+    if (previous == null) return drawing
+    return previous.copy(Bitmap.Config.ARGB_8888, true).apply {
+        Canvas(this).drawBitmap(drawing, 0f, 0f, null)
+    }
+}
+
+internal fun drawImageOverlay(target: Bitmap, drawing: Bitmap, crop: Rect) {
+    Canvas(target).drawBitmap(drawing, null, crop, Paint(Paint.FILTER_BITMAP_FLAG))
 }
 
 // Feathered inpaint stitching: the generated patch went through a

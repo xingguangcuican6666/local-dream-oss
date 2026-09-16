@@ -45,6 +45,7 @@ import io.github.xororz.localdream.data.GenerationPreferences
 import io.github.xororz.localdream.data.HistoryFilter
 import io.github.xororz.localdream.data.HistoryItem
 import io.github.xororz.localdream.data.HistoryManager
+import io.github.xororz.localdream.navigation.popBackStackIfResumed
 import io.github.xororz.localdream.ui.components.GenerationParamsDialog
 import io.github.xororz.localdream.ui.components.OverlayIconButton
 import io.github.xororz.localdream.ui.components.ShareParamsFlow
@@ -113,7 +114,7 @@ fun HistoryScreen(navController: NavController) {
             TopAppBar(
                 title = { Text(stringResource(R.string.history_tab)) },
                 navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
+                    IconButton(onClick = { navController.popBackStackIfResumed() }) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
                             stringResource(R.string.back),

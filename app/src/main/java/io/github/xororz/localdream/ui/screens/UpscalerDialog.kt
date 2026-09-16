@@ -54,6 +54,10 @@ import io.github.xororz.localdream.utils.UPSCALER_NATIVE_SCALE
  * in-dialog progress, persists the confirmed choice under
  * "<modelId>_selected_upscaler", and only invokes [onUpscalerConfirmed] for a
  * model that is already downloaded.
+ *
+ * [upscalersOverride] replaces the local repository's list (connected-device
+ * mode: the host's installed upscalers, always isDownloaded = true, so the
+ * download path is unreachable).
  */
 @Composable
 fun UpscalerPickerFlow(
@@ -62,13 +66,17 @@ fun UpscalerPickerFlow(
     upscalerPreferences: SharedPreferences,
     onDismiss: () -> Unit,
     onUpscalerConfirmed: (UpscalerModel, Int) -> Unit,
+    upscalersOverride: List<UpscalerModel>? = null,
 ) {
     val context = LocalContext.current
     val msgDownloadDone = stringResource(R.string.download_done)
     val msgErrorDownloadFailed = stringResource(R.string.error_download_failed)
     val msgDownloadModelFirst = stringResource(R.string.download_model_first)
 
-    LaunchedEffect(Unit) { upscalerRepository.ensureLoaded() }
+    LaunchedEffect(Unit) {
+        if (upscalersOverride == null) upscalerRepository.ensureLoaded()
+    }
+    val upscalers = upscalersOverride ?: upscalerRepository.upscalers
     var tempSelectedUpscalerId by remember {
         mutableStateOf(upscalerPreferences.getString("${modelId}_selected_upscaler", null))
     }
@@ -136,7 +144,7 @@ fun UpscalerPickerFlow(
     }
 
     UpscalerSelectDialog(
-        upscalers = upscalerRepository.upscalers,
+        upscalers = upscalers,
         selectedUpscalerId = tempSelectedUpscalerId,
         selectedScale = tempSelectedScale,
         downloadingUpscalerId = downloadingUpscalerId,
@@ -150,7 +158,7 @@ fun UpscalerPickerFlow(
         },
         onConfirm = {
             val selectedUpscaler =
-                upscalerRepository.upscalers.find { it.id == tempSelectedUpscalerId }
+                upscalers.find { it.id == tempSelectedUpscalerId }
             if (selectedUpscaler != null && selectedUpscaler.isDownloaded) {
                 upscalerPreferences.edit {
                     putString("${modelId}_selected_upscaler", selectedUpscaler.id)

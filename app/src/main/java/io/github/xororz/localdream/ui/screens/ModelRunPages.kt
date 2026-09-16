@@ -63,6 +63,7 @@ import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -74,8 +75,10 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
@@ -105,6 +108,10 @@ internal fun ModelRunResultPage(
     upscaleEnabled: Boolean,
     showUltrafixButton: Boolean,
     ultrafixEnabled: Boolean,
+    // Long-pressing either the upscale or the UltraFix button opens the
+    // local-image import dialog for UltraFix.
+    onUpscaleLongClick: () -> Unit,
+    onUltrafixLongClick: () -> Unit,
     // null when the displayed image has no history row to mark (hides the
     // favorite button).
     isFavorite: Boolean?,
@@ -230,27 +237,23 @@ internal fun ModelRunResultPage(
                                     }
 
                                     if (showUpscaleButton) {
-                                        FilledTonalIconButton(
-                                            onClick = onUpscaleClick,
+                                        LongPressableTonalIconButton(
                                             enabled = upscaleEnabled,
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.AutoFixHigh,
-                                                contentDescription = "upscale image",
-                                            )
-                                        }
+                                            onClick = onUpscaleClick,
+                                            onLongClick = onUpscaleLongClick,
+                                            icon = Icons.Default.AutoFixHigh,
+                                            contentDescription = "upscale image",
+                                        )
                                     }
 
                                     if (showUltrafixButton) {
-                                        FilledTonalIconButton(
-                                            onClick = onUltrafixClick,
+                                        LongPressableTonalIconButton(
                                             enabled = ultrafixEnabled,
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.AutoAwesome,
-                                                contentDescription = "ultrafix image",
-                                            )
-                                        }
+                                            onClick = onUltrafixClick,
+                                            onLongClick = onUltrafixLongClick,
+                                            icon = Icons.Default.AutoAwesome,
+                                            contentDescription = "ultrafix image",
+                                        )
                                     }
 
                                     FilledTonalIconButton(
@@ -722,5 +725,41 @@ internal fun ModelRunHistoryPage(
                 }
             }
         }
+    }
+}
+
+// FilledTonalIconButton look-alike with a long-press slot (M3 icon buttons
+// expose none). Both result-page image actions use it so a long press on
+// either can open the UltraFix local-image import dialog.
+@Composable
+private fun LongPressableTonalIconButton(
+    enabled: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    icon: ImageVector,
+    contentDescription: String,
+) {
+    val colors = IconButtonDefaults.filledTonalIconButtonColors()
+    Box(
+        modifier = Modifier
+            .minimumInteractiveComponentSize()
+            // Standard M3 icon-button container.
+            .size(40.dp)
+            .clip(CircleShape)
+            .background(
+                if (enabled) colors.containerColor else colors.disabledContainerColor,
+            )
+            .combinedClickable(
+                enabled = enabled,
+                onClick = onClick,
+                onLongClick = onLongClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = if (enabled) colors.contentColor else colors.disabledContentColor,
+        )
     }
 }

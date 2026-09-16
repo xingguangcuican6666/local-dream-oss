@@ -63,6 +63,7 @@ import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.Brush
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Draw
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
@@ -88,6 +89,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SmallFloatingActionButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
@@ -137,6 +139,7 @@ import io.github.xororz.localdream.data.HistoryItem
 import io.github.xororz.localdream.data.HistoryManager
 import io.github.xororz.localdream.data.ModelRepository
 import io.github.xororz.localdream.data.PatchScanner
+import io.github.xororz.localdream.data.RemoteRepository
 import io.github.xororz.localdream.data.Resolution
 import io.github.xororz.localdream.data.TagAutocompleteRepository
 import io.github.xororz.localdream.data.TagMatchType
@@ -177,7 +180,12 @@ import kotlinx.coroutines.withTimeoutOrNull
 @SuppressLint("DefaultLocale")
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modifier = Modifier) {
+fun ModelRunScreen(
+    modelId: String,
+    navController: NavController,
+    modifier: Modifier = Modifier,
+    isRemote: Boolean = false,
+) {
     val serviceState by BackgroundGenerationService.generationState.collectAsState()
     val backendState by BackendService.backendState.collectAsState()
     val context = LocalContext.current
@@ -187,6 +195,14 @@ fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modi
     val coroutineScope = rememberCoroutineScope()
     val lifecycleOwner = LocalLifecycleOwner.current
     val modelRepository = remember { ModelRepository.getInstance(context) }
+    val remoteRepository = remember { RemoteRepository.getInstance(context) }
+    // Control client for the host device; null in local mode. The generation
+    // host feeds every backend HTTP call (generate/tokenize/health).
+    val remoteClient = remember(remoteRepository.connection) {
+        if (isRemote) remoteRepository.client() else null
+    }
+    val backendHost = remoteClient?.generationHost
+        ?: BackgroundGenerationService.LOCAL_BACKEND_HOST
 
     // String resources hoisted to composable scope (lint: LocalContextGetResourceValueCall).
     val msgMediaPermissionHint = stringResource(R.string.media_permission_hint)
@@ -209,10 +225,19 @@ fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modi
     val msgNoImageAvailable = stringResource(R.string.no_image_available)
     val msgImageLoadFailed = stringResource(R.string.image_load_failed)
     val msgGenerationInterrupted = stringResource(R.string.generation_interrupted)
+    val msgRemoteSelectFailed = stringResource(R.string.remote_select_failed)
     // Reaches the screen with the repository already loaded on the normal
     // navigation path; resolves asynchronously after process recreation.
-    val model = remember(modelRepository.models) { modelRepository.models.find { it.id == modelId } }
-    LaunchedEffect(Unit) { modelRepository.ensureLoaded() }
+    val model = if (isRemote) {
+        remember(remoteRepository.models) { remoteRepository.models.find { it.id == modelId } }
+    } else {
+        remember(modelRepository.models) { modelRepository.models.find { it.id == modelId } }
+    }
+    LaunchedEffect(Unit) {
+        if (!isRemote) {
+            modelRepository.ensureLoaded()
+        }
+    }
     val historyManager = remember { HistoryManager(context) }
     val scrollBehavior =
         TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
@@ -314,6 +339,27 @@ fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modi
     var progress by remember { mutableFloatStateOf(0f) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var isCheckingBackend by remember { mutableStateOf(true) }
+
+    // True only after a health check succeeded (and reset when a restart
+    // begins). Gates tokenizer calls: "checking finished" alone also covers
+    // the failure case, where firing tokenize requests is pointless.
+    var backendReady by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        if (isRemote) {
+            // After process recreation the remote catalog is empty; re-fetch it
+            // from the saved host so the model resolves again.
+            remoteRepository.restore()
+            if (remoteRepository.models.isEmpty()) {
+                remoteRepository.refresh()
+            }
+            if (remoteRepository.models.none { it.id == modelId }) {
+                // Host unreachable or the model is gone from it: drop the
+                // loading overlay so the offline body below is visible.
+                isCheckingBackend = false
+            }
+        }
+    }
     var showParametersDialog by remember { mutableStateOf(false) }
     val pagerState = rememberPagerState(initialPage = 0, pageCount = { 3 })
     var generationStartTime by remember { mutableStateOf<Long?>(null) }
@@ -348,7 +394,9 @@ fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modi
     // Both settings can only change on the model list screen, so a snapshot
     // taken once per screen entry is enough; re-reading on every recomposition
     // would hit SharedPreferences in the hottest path of this composable.
-    val useImg2img = remember { preferences.getBoolean("use_img2img", true) }
+    // In remote mode the img2img capability is the host's, not this device's.
+    val localUseImg2img = remember { preferences.getBoolean("use_img2img", true) }
+    val useImg2img = if (isRemote) remoteRepository.useImg2img else localUseImg2img
     val enableTagAutocomplete = remember { preferences.getBoolean("enable_tag_autocomplete", true) }
     val tagSuggestionCount = 128
     val tagAutocompleteRepository = remember { TagAutocompleteRepository.getInstance(context) }
@@ -435,6 +483,11 @@ fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modi
     var savedPathHistory by remember { mutableStateOf<List<PathData>?>(null) }
     var cropRect by remember { mutableStateOf<AndroidRect?>(null) }
 
+    var showDrawScreen by remember { mutableStateOf(false) }
+    // Transparent edits are also retained for full-image inpaint exports.
+    var drawingOverlayBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var snapshotDrawingOverlayBitmap by remember { mutableStateOf<Bitmap?>(null) }
+
     // True only when selectedImageUri points to a real source image from the gallery picker.
     // False when img2img was seeded from a result/history bitmap (selectedImageUri is a
     // synthetic tmp.txt path that holds base64, not a decodable image).
@@ -471,6 +524,7 @@ fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modi
     // pendingUltrafix marks the in-flight generation as an ultrafix run so the
     // completion handler can record the right mode.
     var showUltrafixConfirmDialog by remember { mutableStateOf(false) }
+    var showUltrafixImportDialog by remember { mutableStateOf(false) }
     var pendingUltrafix by remember { mutableStateOf(false) }
     var isUltrafixPreparing by remember { mutableStateOf(false) }
     // UltraFix runs with its own steps/denoise (defaults 10 / 0.4), persisted
@@ -482,6 +536,11 @@ fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modi
     var ultrafixDenoiseSteps by remember {
         mutableIntStateOf(GenerationDefaults.GLOBAL.ultrafixDenoiseSteps)
     }
+    // On (default): UltraFix runs on neutral quality tags instead of the
+    // prompt-page prompt. Off: uses the prompt-page prompt (legacy behavior).
+    var ultrafixQualityDenoise by remember {
+        mutableStateOf(GenerationDefaults.GLOBAL.ultrafixQualityDenoise)
+    }
     var ultrafixSaveJob: Job? by remember { mutableStateOf(null) }
     LaunchedEffect(Unit) {
         ultrafixSteps = generationPreferences.observeUltrafixSteps(modelId).first()
@@ -489,6 +548,7 @@ fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modi
             minOf(GenerationDefaults.ULTRAFIX_DENOISE_STEPS_MAX, ultrafixSteps.roundToInt())
         ultrafixDenoiseSteps =
             generationPreferences.observeUltrafixDenoiseSteps(modelId).first().coerceIn(0, maxDenoiseSteps)
+        ultrafixQualityDenoise = generationPreferences.observeUltrafixQualityDenoise(modelId).first()
     }
     val upscalerRepository = remember { UpscalerRepository.getInstance(context) }
     val upscalerPreferences =
@@ -507,6 +567,7 @@ fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modi
     fun clearImg2imgState() {
         selectedImageUri = null
         croppedBitmap = null
+        drawingOverlayBitmap = null
         maskBitmap = null
         isInpaintMode = false
         cropRect = null
@@ -541,7 +602,12 @@ fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modi
         ultrafixSaveJob?.cancel()
         ultrafixSaveJob = scope.launch(Dispatchers.IO) {
             delay(500)
-            generationPreferences.saveUltrafixParams(modelId, ultrafixSteps, ultrafixDenoiseSteps)
+            generationPreferences.saveUltrafixParams(
+                modelId,
+                ultrafixSteps,
+                ultrafixDenoiseSteps,
+                ultrafixQualityDenoise,
+            )
         }
     }
 
@@ -582,8 +648,8 @@ fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modi
     promptField.onTextCommitted = { saveAllFields() }
     negativePromptField.onTextCommitted = { saveAllFields() }
 
-    PromptTokenCountEffect(promptField, backendReady = !isCheckingBackend)
-    PromptTokenCountEffect(negativePromptField, backendReady = !isCheckingBackend)
+    PromptTokenCountEffect(promptField, backendReady = backendReady, backendHost = backendHost)
+    PromptTokenCountEffect(negativePromptField, backendReady = backendReady, backendHost = backendHost)
 
     val onBatchCountsChange = remember {
         { value: Float ->
@@ -641,11 +707,12 @@ fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modi
                                 val safeRight = rect.right.coerceAtMost(decoder.width)
                                 val safeBottom = rect.bottom.coerceAtMost(decoder.height)
                                 if (safeRight > safeLeft && safeBottom > safeTop) {
-                                    val region = AndroidRect(
-                                        safeLeft,
-                                        safeTop,
-                                        safeRight,
-                                        safeBottom,
+                                    val region = snapInpaintCropRect(
+                                        rect = AndroidRect(safeLeft, safeTop, safeRight, safeBottom),
+                                        imageWidth = decoder.width,
+                                        imageHeight = decoder.height,
+                                        tolerance = (2f * context.resources.displayMetrics.density)
+                                            .roundToInt().coerceAtLeast(1),
                                     )
                                     clampedRect = region
                                     decoder.decodeRegion(region, BitmapFactory.Options())
@@ -686,6 +753,7 @@ fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modi
                 withContext(Dispatchers.Main) {
                     cropRect = clampedRect
                     croppedBitmap = scaled
+                    drawingOverlayBitmap = null
                 }
 
                 val tmpFile = File(context.filesDir, "tmp.txt")
@@ -700,6 +768,7 @@ fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modi
                     ).show()
                     selectedImageUri = null
                     croppedBitmap = null
+                    drawingOverlayBitmap = null
                     cropRect = null
                     hasOriginalImageForStitch = false
                 }
@@ -797,6 +866,7 @@ fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modi
                 }
 
                 croppedBitmap = displayBitmap
+                drawingOverlayBitmap = null
                 cropRect = AndroidRect(0, 0, displayBitmap.width, displayBitmap.height)
                 selectedImageUri = Uri.fromFile(File(context.filesDir, "tmp.txt"))
                 hasOriginalImageForStitch = false
@@ -813,6 +883,7 @@ fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modi
                 base64EncodeDone = false
                 selectedImageUri = null
                 croppedBitmap = null
+                drawingOverlayBitmap = null
                 cropRect = null
                 hasOriginalImageForStitch = false
                 false
@@ -839,12 +910,18 @@ fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modi
         // Derive the strength that makes the backend run exactly the chosen
         // number of denoise steps (clamped to the total).
         val ultrafixDenoiseStrength = ultrafixDenoiseStrength(ultrafixDenoiseSteps, totalSteps)
+        // When quality-denoise is on (default), UltraFix runs on neutral quality
+        // tags instead of the prompt-page prompt; off uses the box prompt.
+        val ultrafixPrompt =
+            if (ultrafixQualityDenoise) GenerationDefaults.ULTRAFIX_QUALITY_PROMPT else promptField.text
         isUltrafixPreparing = true
         generationParamsTmp = GenerationParameters(
             steps = totalSteps,
             cfg = cfg,
             seed = 0,
-            prompt = promptField.text,
+            // Record the prompt UltraFix actually ran with (quality tags when
+            // the toggle is on), so history reflects what produced the result.
+            prompt = ultrafixPrompt,
             negativePrompt = negativePromptField.text,
             generationTime = "",
             width = bmp.width,
@@ -867,7 +944,7 @@ fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modi
                 }
                 pendingUltrafix = true
                 val intent = Intent(context, BackgroundGenerationService::class.java).apply {
-                    putExtra("prompt", promptField.text)
+                    putExtra("prompt", ultrafixPrompt)
                     putExtra("negative_prompt", negativePromptField.text)
                     putExtra("steps", totalSteps)
                     putExtra("cfg", cfg)
@@ -880,6 +957,7 @@ fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modi
                     putExtra("scheduler", scheduler)
                     putExtra("ultrafix", true)
                     putExtra("ultrafix_tile_size", tileSize)
+                    putExtra("backend_host", backendHost)
                 }
                 context.startForegroundService(intent)
                 true
@@ -916,6 +994,31 @@ fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modi
         PickVisualMedia(),
     ) { uri ->
         uri?.let { processSelectedImage(it) }
+    }
+
+    // Places an imported (already size-validated and resized) local image
+    // into the result slot as the UltraFix source. Synthetic params: only the
+    // dimensions matter (they drive the size gating); everything else marks
+    // "not generated by this app". The import itself is never written to
+    // history - only the repaired result is.
+    fun applyUltrafixImport(bitmap: Bitmap) {
+        currentBitmap = bitmap
+        generationParams = GenerationParameters(
+            steps = 0,
+            cfg = cfg,
+            seed = null,
+            prompt = "",
+            negativePrompt = "",
+            generationTime = null,
+            width = bitmap.width,
+            height = bitmap.height,
+            runOnCpu = false,
+            mode = GenerationMode.UNKNOWN,
+        )
+        generationParamsModelId = modelId
+        currentDisplayedHistoryId = null
+        stitchableHistoryIds = emptySet()
+        imageVersion++
     }
 
     val contentPickerLauncher = rememberLauncherForActivityResult(
@@ -995,6 +1098,10 @@ fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modi
                         val mutableOriginal =
                             originalBitmap.copy(Bitmap.Config.ARGB_8888, true)
 
+                        snapshotDrawingOverlayBitmap?.let { drawing ->
+                            drawImageOverlay(mutableOriginal, drawing, snapshotCropRect!!)
+                        }
+
                         val rectW = snapshotCropRect!!.width()
                         val rectH = snapshotCropRect!!.height()
                         val resizedPatch = bitmap.scale(rectW, rectH)
@@ -1039,15 +1146,24 @@ fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modi
             currentBitmap = null
             generationParams = null
             BackgroundGenerationService.stop(context)
-            // Use an explicit STOP command instead of stopService(): when the
-            // backend was just started, its Service may not have reached
-            // onCreate yet, and stopService() on a not-yet-running Service is a
-            // no-op that would leak the native process. Routing through
-            // onStartCommand(ACTION_STOP) guarantees the stop is honored after
-            // the pending start, mirroring BackgroundGenerationService.stop().
-            val backendServiceIntent = Intent(context, BackendService::class.java)
-                .setAction(BackendService.ACTION_STOP)
-            context.startForegroundService(backendServiceIntent)
+            if (isRemote) {
+                // Ask the host to unload its backend, mirroring the local
+                // teardown semantics (leaving the screen releases the model).
+                // Scoped to this model id: the host ignores the stop if a
+                // newer selection (e.g. the next screen's model) has landed
+                // first, so a delayed stop can never kill it.
+                remoteRepository.stopHostBackendAsync(modelId)
+            } else {
+                // Use an explicit STOP command instead of stopService(): when the
+                // backend was just started, its Service may not have reached
+                // onCreate yet, and stopService() on a not-yet-running Service is a
+                // no-op that would leak the native process. Routing through
+                // onStartCommand(ACTION_STOP) guarantees the stop is honored after
+                // the pending start, mirroring BackgroundGenerationService.stop().
+                val backendServiceIntent = Intent(context, BackendService::class.java)
+                    .setAction(BackendService.ACTION_STOP)
+                context.startForegroundService(backendServiceIntent)
+            }
             isRunning = false
             progress = 0f
             errorMessage = null
@@ -1109,8 +1225,14 @@ fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modi
     LaunchedEffect(modelId, model?.runOnCpu) {
         if (model?.runOnCpu == false && !model.usesFixedCanvas) {
             val baseResolution = Resolution(512, 512)
-            val patchResolutions = withContext(Dispatchers.IO) {
-                PatchScanner.scanAvailableResolutions(context, modelId)
+            // Remote models report the host's patch resolutions in the
+            // catalog; local ones are scanned from the model directory.
+            val patchResolutions = if (isRemote) {
+                remoteRepository.resolutionsFor(modelId)
+            } else {
+                withContext(Dispatchers.IO) {
+                    PatchScanner.scanAvailableResolutions(context, modelId)
+                }
             }
 
             val allResolutions =
@@ -1152,6 +1274,20 @@ fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modi
                 else -> prefs.height
             }
 
+            // Preferences are keyed by bare modelId and shared with a local
+            // model of the same id, so the saved resolution may be a patch
+            // the HOST doesn't have (e.g. 768 saved locally, host only has
+            // 512). Sending it would make the host silently fall back to 512
+            // while this screen still generates at 768 - shape mismatch.
+            if (isRemote && !model.usesFixedCanvas && !model.runOnCpu) {
+                val allowed = listOf(Resolution(512, 512)) +
+                    remoteRepository.resolutionsFor(modelId)
+                if (allowed.none { it.width == currentWidth && it.height == currentHeight }) {
+                    currentWidth = 512
+                    currentHeight = 512
+                }
+            }
+
             if (isFirstRun) {
                 saveAllFields()
             }
@@ -1162,18 +1298,33 @@ fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modi
 
     LaunchedEffect(hasInitialized) {
         if (hasInitialized) {
-            // Always declare the target; BackendService reconciles idempotently
-            // (reuses a live process for the same model, restarts otherwise).
-            // Reading the shared backendState here to decide would race with the
-            // previous screen's still-pending stop and could skip the start.
-            val intent = Intent(context, BackendService::class.java).apply {
-                putExtra("modelId", model?.id)
-                putExtra("backendType", model?.backendType)
-                putExtra("width", currentWidth)
-                putExtra("height", currentHeight)
-                putExtra("use_opencl", useOpenCL)
+            if (isRemote) {
+                // Ask the host to start (or keep serving) this model, and only
+                // then kick off the health check (via the restart trigger):
+                // polling in parallel could see the host still Ready on a
+                // previous selection.
+                val ok = remoteClient?.selectModel(modelId, currentWidth, currentHeight)
+                    ?: false
+                if (ok) {
+                    backendRestartTrigger++
+                } else {
+                    isCheckingBackend = false
+                    errorMessage = msgRemoteSelectFailed
+                }
+            } else {
+                // Always declare the target; BackendService reconciles idempotently
+                // (reuses a live process for the same model, restarts otherwise).
+                // Reading the shared backendState here to decide would race with the
+                // previous screen's still-pending stop and could skip the start.
+                val intent = Intent(context, BackendService::class.java).apply {
+                    putExtra("modelId", model?.id)
+                    putExtra("backendType", model?.backendType)
+                    putExtra("width", currentWidth)
+                    putExtra("height", currentHeight)
+                    putExtra("use_opencl", useOpenCL)
+                }
+                context.startForegroundService(intent)
             }
-            context.startForegroundService(intent)
         }
     }
 
@@ -1308,6 +1459,7 @@ fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modi
                         snapshotSelectedImageUri = selectedImageUri
                         snapshotCropRect = cropRect
                         snapshotMaskBitmap = if (isInpaintMode) maskBitmap else null
+                        snapshotDrawingOverlayBitmap = drawingOverlayBitmap
                         snapshotHasOriginalImage = hasOriginalImageForStitch
                     }
                     // stitchableHistoryIds / currentDisplayedHistoryId are set once
@@ -1427,18 +1579,41 @@ fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modi
                             resolution.height,
                         )
                     }
-                    model?.let { m ->
-                        val serviceIntent =
-                            Intent(context, BackendService::class.java).apply {
-                                action = BackendService.ACTION_RESTART
-                                putExtra("modelId", modelId)
-                                putExtra("backendType", m.backendType)
-                                putExtra("width", resolution.width)
-                                putExtra("height", resolution.height)
-                            }
-                        context.startForegroundService(serviceIntent)
+                    if (isRemote) {
+                        // The host's BackendService reconciles the new
+                        // resolution into a restart on its own. The health
+                        // check only passes once the host reports the new
+                        // resolution, so triggering it alongside the in-flight
+                        // select is safe.
                         isCheckingBackend = true
+                        backendReady = false
+                        scope.launch {
+                            val ok = remoteClient?.selectModel(
+                                modelId,
+                                resolution.width,
+                                resolution.height,
+                            ) ?: false
+                            if (!ok) {
+                                isCheckingBackend = false
+                                errorMessage = msgRemoteSelectFailed
+                            }
+                        }
                         backendRestartTrigger++
+                    } else {
+                        model?.let { m ->
+                            val serviceIntent =
+                                Intent(context, BackendService::class.java).apply {
+                                    action = BackendService.ACTION_RESTART
+                                    putExtra("modelId", modelId)
+                                    putExtra("backendType", m.backendType)
+                                    putExtra("width", resolution.width)
+                                    putExtra("height", resolution.height)
+                                }
+                            context.startForegroundService(serviceIntent)
+                            isCheckingBackend = true
+                            backendReady = false
+                            backendRestartTrigger++
+                        }
                     }
                 }
                 showResolutionChangeDialog = false
@@ -1497,36 +1672,63 @@ fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modi
         )
     }
 
-    LaunchedEffect(Unit) {
-        checkBackendHealth(
-            backendState = BackendService.backendState,
-            servingModelId = BackendService.servingModelId,
-            expectedModelId = modelId,
-            onHealthy = {
-                isCheckingBackend = false
-            },
-            onUnhealthy = {
+    // Local mode reads the shared BackendService state; remote mode polls the
+    // host's /status endpoint plus its generation port's /health. Remote Ready
+    // additionally requires the host's (model, width, height) to match this
+    // screen's current config, so a process left over from an older
+    // resolution can never be mistaken for ready.
+    suspend fun awaitBackendReady() {
+        if (isRemote) {
+            val client = remoteClient
+            if (client == null) {
                 isCheckingBackend = false
                 errorMessage = msgBackendFailed
-            },
-        )
-    }
-
-    LaunchedEffect(backendRestartTrigger) {
-        if (backendRestartTrigger > 0) {
-            delay(500)
-            checkBackendHealth(
-                backendState = BackendService.backendState,
-                servingModelId = BackendService.servingModelId,
+                return
+            }
+            checkRemoteBackendHealth(
+                client = client,
                 expectedModelId = modelId,
+                expectedWidth = currentWidth,
+                expectedHeight = currentHeight,
                 onHealthy = {
                     isCheckingBackend = false
+                    backendReady = true
                 },
                 onUnhealthy = {
                     isCheckingBackend = false
                     errorMessage = msgBackendFailed
                 },
             )
+        } else {
+            checkBackendHealth(
+                backendState = BackendService.backendState,
+                servingModelId = BackendService.servingModelId,
+                expectedModelId = modelId,
+                onHealthy = {
+                    isCheckingBackend = false
+                    backendReady = true
+                },
+                onUnhealthy = {
+                    isCheckingBackend = false
+                    errorMessage = msgBackendFailed
+                },
+            )
+        }
+    }
+
+    // Remote mode starts its health check only after /select has been sent
+    // (in the hasInitialized effect); checking in parallel could see the host
+    // still Ready on a previous model and race the switch.
+    LaunchedEffect(Unit) {
+        if (!isRemote) {
+            awaitBackendReady()
+        }
+    }
+
+    LaunchedEffect(backendRestartTrigger) {
+        if (backendRestartTrigger > 0) {
+            delay(500)
+            awaitBackendReady()
         }
     }
 
@@ -1834,6 +2036,7 @@ fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modi
                                             putExtra("scheduler", scheduler)
                                             putExtra("aspect_ratio", aspectRatio)
                                             putExtra("batch_index", i)
+                                            putExtra("backend_host", backendHost)
                                             if (selectedImageUri != null && base64EncodeDone) {
                                                 putExtra("has_image", true)
                                                 if (isInpaintMode && maskBitmap != null) {
@@ -2069,6 +2272,7 @@ fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modi
                                     onClick = {
                                         selectedImageUri = null
                                         croppedBitmap = null
+                                        drawingOverlayBitmap = null
                                         maskBitmap = null
                                         isInpaintMode = false
                                         cropRect = null
@@ -2088,6 +2292,27 @@ fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modi
                                     Icon(
                                         Icons.Default.Clear,
                                         contentDescription = "Remove Image",
+                                        modifier = Modifier.size(16.dp),
+                                    )
+                                }
+                                IconButton(
+                                    onClick = {
+                                        showDrawScreen = true
+                                    },
+                                    enabled = !isRunning && croppedBitmap != null,
+                                    modifier = Modifier
+                                        .size(24.dp)
+                                        .background(
+                                            color = MaterialTheme.colorScheme.surface.copy(
+                                                alpha = 0.7f,
+                                            ),
+                                            shape = CircleShape,
+                                        )
+                                        .align(Alignment.TopStart),
+                                ) {
+                                    Icon(
+                                        Icons.Default.Draw,
+                                        contentDescription = "Draw Image",
                                         modifier = Modifier.size(16.dp),
                                     )
                                 }
@@ -2270,6 +2495,24 @@ fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modi
                 )
             },
         ) { paddingValues ->
+            if (model == null && isRemote && !isCheckingBackend) {
+                // Process recreation with the host unreachable (or the model
+                // removed from it): the catalog re-fetch failed, so there is
+                // no model to render. Show an explicit state instead of an
+                // empty scaffold.
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = stringResource(R.string.remote_banner_offline),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
             if (model != null) {
                 HorizontalPager(
                     state = pagerState,
@@ -2291,8 +2534,14 @@ fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modi
                             generationParams = generationParams,
                             recentHistory = recentHistory,
                             showReportButton = BuildConfig.FLAVOR == "filter",
-                            // Upscaling is only offered for the NPU runtime and resolutions <= 1024
+                            // Upscaling is only offered for the NPU runtime and resolutions <= 1024.
+                            // A CPU diffusion backend never initializes the QNN
+                            // runtime, so its /upscale cannot load the .bin
+                            // upscaler; that holds for the host's backend too.
+                            // Remote mode additionally needs an upscaler
+                            // installed on the host.
                             showUpscaleButton = !model.runOnCpu &&
+                                (!isRemote || remoteRepository.upscalerPaths.isNotEmpty()) &&
                                 generationParams?.let { maxOf(it.width, it.height) <= 1024 } == true,
                             upscaleEnabled = !isRunning && !isUpscaling && !isUltrafixPreparing,
                             // Ultrafix takes over where upscaling stops: SDXL
@@ -2311,6 +2560,15 @@ fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modi
                                         maxOf(currentWidth, currentHeight, 512)
                                 } == true,
                             ultrafixEnabled = !isRunning && !isUpscaling && !isUltrafixPreparing,
+                            // The upscale button also exists on models that
+                            // can't run UltraFix (SD1.5 NPU); its long press
+                            // only opens the import dialog when the model can.
+                            onUpscaleLongClick = {
+                                if (useImg2img && model.isSdxl && cfg == 1f) {
+                                    showUltrafixImportDialog = true
+                                }
+                            },
+                            onUltrafixLongClick = { showUltrafixImportDialog = true },
                             isFavorite = if (currentDisplayedHistoryId != null) {
                                 displayedFavorite
                             } else {
@@ -2462,6 +2720,30 @@ fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modi
                 },
             )
         }
+        if (showDrawScreen && croppedBitmap != null) {
+            DrawScreen(
+                originalBitmap = croppedBitmap!!,
+                onDrawingSaved = { sketchedBitmap, drawing ->
+                    val previousDrawing = drawingOverlayBitmap
+                    val combinedDrawing = withContext(Dispatchers.Default) {
+                        mergeDrawingLayers(previousDrawing, drawing)
+                    }
+                    withContext(Dispatchers.IO) {
+                        // Match the upload canvas used by cropping and by the inpaint mask.
+                        val upload = padBitmapToCanvas(sketchedBitmap, currentWidth, currentHeight)
+                        val payload = bitmapToBase64Png(upload)
+                        File(context.filesDir, "tmp.txt").writeText(payload)
+                        if (upload !== sketchedBitmap) upload.recycle()
+                    }
+                    croppedBitmap = sketchedBitmap
+                    drawingOverlayBitmap = combinedDrawing
+                    showDrawScreen = false
+                },
+                onNavigateBack = {
+                    showDrawScreen = false
+                },
+            )
+        }
     }
     if (showReportDialog && currentBitmap != null && generationParams != null) {
         ModelRunConfirmDialog(
@@ -2549,6 +2831,27 @@ fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modi
         )
     }
 
+    // Import-and-resize a local image for UltraFix. A confirmed image that
+    // already satisfies the UltraFix window goes straight to the parameter
+    // dialog; a smaller one just lands on the result page, where the visible
+    // upscale button is the natural next step.
+    if (showUltrafixImportDialog) {
+        UltrafixImportDialog(
+            tileSize = maxOf(currentWidth, currentHeight, 512),
+            onDismiss = { showUltrafixImportDialog = false },
+            onConfirm = { bitmap ->
+                applyUltrafixImport(bitmap)
+                showUltrafixImportDialog = false
+                val tile = maxOf(currentWidth, currentHeight, 512)
+                if (maxOf(bitmap.width, bitmap.height) > 1024 &&
+                    minOf(bitmap.width, bitmap.height) >= tile
+                ) {
+                    showUltrafixConfirmDialog = true
+                }
+            },
+        )
+    }
+
     // Ultrafix parameter confirmation.
     if (showUltrafixConfirmDialog) {
         AlertDialog(
@@ -2567,6 +2870,12 @@ fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modi
                             currentBitmap?.height ?: 0,
                             maxOf(currentWidth, currentHeight),
                         ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+
+                    Text(
+                        stringResource(R.string.ultrafix_longpress_hint),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -2610,10 +2919,35 @@ fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modi
                         modifier = Modifier.fillMaxWidth(),
                     )
 
+                    // Quality-denoise toggle: run UltraFix on neutral quality
+                    // tags instead of the prompt-page prompt. On by default.
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            stringResource(
+                                R.string.ultrafix_quality_denoise_desc,
+                                GenerationDefaults.ULTRAFIX_QUALITY_PROMPT,
+                            ),
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Switch(
+                            checked = ultrafixQualityDenoise,
+                            onCheckedChange = {
+                                ultrafixQualityDenoise = it
+                                saveUltrafixParams()
+                            },
+                        )
+                    }
+
                     TextButton(
                         onClick = {
                             ultrafixSteps = GenerationDefaults.GLOBAL.ultrafixSteps
                             ultrafixDenoiseSteps = GenerationDefaults.GLOBAL.ultrafixDenoiseSteps
+                            ultrafixQualityDenoise = GenerationDefaults.GLOBAL.ultrafixQualityDenoise
                             saveUltrafixParams()
                         },
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
@@ -2633,15 +2967,23 @@ fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modi
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     // The prompts are only a reminder of what will run; show a
-                    // truncated preview instead of the full text.
+                    // truncated preview instead of the full text. With the
+                    // toggle on, UltraFix runs on the quality tags, so preview
+                    // those instead of the prompt-page text.
                     fun preview(text: String) = if (text.length > 80) text.take(80) + "..." else text
-                    if (promptField.text.isNotBlank()) {
+                    val ultrafixPreviewPrompt =
+                        if (ultrafixQualityDenoise) {
+                            GenerationDefaults.ULTRAFIX_QUALITY_PROMPT
+                        } else {
+                            promptField.text
+                        }
+                    if (ultrafixPreviewPrompt.isNotBlank()) {
                         Text(
                             stringResource(R.string.image_prompt),
                             style = MaterialTheme.typography.titleSmall,
                         )
                         Text(
-                            preview(promptField.text),
+                            preview(ultrafixPreviewPrompt),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -2681,6 +3023,7 @@ fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modi
             modelId = modelId,
             upscalerRepository = upscalerRepository,
             upscalerPreferences = upscalerPreferences,
+            upscalersOverride = if (isRemote) remoteRepository.remoteUpscalers() else null,
             onDismiss = { showUpscalerDialog = false },
             onUpscalerConfirmed = { selectedUpscaler, selectedScale ->
                 showUpscalerDialog = false
@@ -2700,6 +3043,12 @@ fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modi
                                 bitmap = bitmap,
                                 upscalerId = selectedUpscaler.id,
                                 targetScale = selectedScale,
+                                backendHost = backendHost,
+                                remoteUpscalerPath = if (isRemote) {
+                                    remoteRepository.upscalerPaths[selectedUpscaler.id]
+                                } else {
+                                    null
+                                },
                             )
 
                             // Save upscaled image via HistoryManager (DB + JPG file)
@@ -2819,6 +3168,7 @@ fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modi
         val detailIdle = !isRunning && !isUpscaling && !isUltrafixPreparing
         val detailCanUpscale = historyBitmap != null && detailItem != null &&
             detailIdle && model?.runOnCpu == false &&
+            (!isRemote || remoteRepository.upscalerPaths.isNotEmpty()) &&
             maxOf(detailItem.params.width, detailItem.params.height) <= 1024
         val detailCanUltrafix = historyBitmap != null && detailItem != null &&
             detailIdle && useImg2img && model?.isSdxl == true && cfg == 1f &&
@@ -3202,11 +3552,17 @@ fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modi
         )
     }
 
-    // Detect shared params on the clipboard once the model is ready.
-    LaunchedEffect(backendState, hasInitialized) {
+    // Detect shared params on the clipboard once the model is ready. Remote
+    // mode has no local backend, so readiness is the health check finishing.
+    LaunchedEffect(backendState, hasInitialized, isCheckingBackend) {
+        val backendReady = if (isRemote) {
+            !isCheckingBackend && errorMessage == null
+        } else {
+            backendState is BackendService.BackendState.Running
+        }
         if (!clipboardImportChecked &&
             hasInitialized &&
-            backendState is BackendService.BackendState.Running
+            backendReady
         ) {
             clipboardImportChecked = true
             val clipboard =

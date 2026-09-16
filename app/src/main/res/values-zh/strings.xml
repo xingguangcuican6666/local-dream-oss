@@ -324,6 +324,7 @@
     <string name="ultrafix_other_params_hint">提示词、CFG、采样器和种子取自提示词界面，请在那里修改。</string>
     <string name="ultrafix_preparing">正在准备 UltraFix…</string>
     <string name="ultrafix_failed">UltraFix 失败: %s</string>
+    <string name="ultrafix_quality_denoise_desc">使用以下提示词去噪：%s。关闭后将使用输入框的提示词。</string>
     <string name="download_model_first">请先下载模型</string>
     <string name="upscaler_anime">动漫</string>
     <string name="upscaler_anime_desc">针对动漫和卡通图像优化</string>
@@ -445,4 +446,38 @@
     <string name="clean_temp_confirm">清理 %s 临时文件（中断的下载和临时缓冲）？</string>
     <string name="clean_temp_none">没有可清理的临时文件</string>
     <string name="clean_temp_done">已释放 %s</string>
+
+    <!-- Device link (remote control between two devices) -->
+    <string name="remote_link">设备互联</string>
+    <string name="remote_host_section">受控模式（本机运行模型）</string>
+    <string name="remote_host_hint">允许同一网络中另一台安装 Local Dream 的设备浏览本机模型并用其生成图片。受控模式开启期间，控制端口（8808）和生成端口（8081）会对局域网开放。</string>
+    <string name="remote_host_start">进入受控模式</string>
+    <string name="remote_host_stop">退出受控模式</string>
+    <string name="remote_host_addresses">本机地址</string>
+    <string name="remote_no_network">未找到网络地址，请先连接 Wi-Fi。</string>
+    <string name="remote_host_serving">正在运行模型：%1$s</string>
+    <string name="remote_host_no_model">未加载模型</string>
+    <string name="remote_connect_section">连接主机（本机作为遥控端）</string>
+    <string name="remote_connect_hint">输入主机设备上显示的地址。连接后模型列表将显示主机上的模型，生成在主机上进行。</string>
+    <string name="remote_host_field">主机地址</string>
+    <string name="remote_connect">连接</string>
+    <string name="remote_disconnect">断开</string>
+    <string name="remote_refresh_models">刷新模型列表</string>
+    <string name="remote_refresh_models_short">刷新</string>
+    <string name="remote_connect_failed_unreachable">无法连接主机。请检查地址并确认主机已进入受控模式。</string>
+    <string name="remote_connected_to">已连接到 %1$s</string>
+    <string name="remote_banner_connected">来自 %1$s 的模型</string>
+    <string name="remote_banner_offline">主机不可达</string>
+    <string name="remote_select_failed">在主机上启动模型失败</string>
+    <string name="remote_port_hint">默认控制端口：%1$d。可用 地址:端口 形式指定其他端口。</string>
+    <string name="remote_host_notify_title">受控模式运行中</string>
+    <string name="remote_host_notify">Local Dream 可被局域网内设备控制</string>
+    <string name="remote_screen_shield">纯黑屏幕（保持运行）</string>
+    <string name="remote_screen_shield_exit">轻触退出</string>
+    <string name="ultrafix_import_action">导入本机图片</string>
+    <string name="ultrafix_import_title">导入图片进行 UltraFix</string>
+    <string name="ultrafix_import_requirement">长边最大 %1$d。UltraFix 需要长边大于 1024 且短边不小于 %2$d；较小的图片导入后可先超分。</string>
+    <string name="ultrafix_import_output">输出尺寸：%1$d×%2$d</string>
+    <string name="ultrafix_import_scale">缩放：%1$d%%</string>
+    <string name="ultrafix_longpress_hint">提示：长按超分或 UltraFix 按钮可导入本机图片。</string>
 </resources>
